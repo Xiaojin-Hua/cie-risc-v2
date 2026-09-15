@@ -65,11 +65,11 @@
 
 ### 二、实现了两类优化
 
-**1. 模型侧重定量化（最大头，不改代码）**
+**1. 模型侧重定量化**
 
 ```
 llama-quantize --allow-requantize \
-  --token-embedding-type Q4_0 \                    # 必须加：否则 tied head 被默认规则升到 Q6_K，模型反而变大
+  --token-embedding-type Q4_0 \                   
   --tensor-type ssm_alpha=Q8_0 --tensor-type ssm_beta=Q8_0 \   # 门控保持 8bit
   in.gguf requant/m-A.gguf Q4_0
 ```
