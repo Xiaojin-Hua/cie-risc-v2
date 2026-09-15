@@ -1,0 +1,2960 @@
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineSystem.cmake:12 (find_program)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_UNAME"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "uname"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/bin/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/uname"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/uname"
+      - "/usr/local/sbin/uname"
+      - "/usr/local/bin/uname"
+      - "/usr/sbin/uname"
+    found: "/usr/bin/uname"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineSystem.cmake:213 (message)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      The target system is: Linux - 1 - riscv64
+      The host system is: Linux - 6.6.63-cloud - riscv64
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeUnixFindMake.cmake:5 (find_program)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_MAKE_PROGRAM"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gmake"
+      - "make"
+      - "smake"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/gmake"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gmake"
+      - "/usr/local/sbin/gmake"
+      - "/usr/local/bin/gmake"
+      - "/usr/sbin/gmake"
+    found: "/usr/bin/gmake"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompiler.cmake:73 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:64 (_cmake_find_compiler)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER"
+    description: "C compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "cc"
+      - "gcc"
+      - "cl"
+      - "bcc"
+      - "xlc"
+      - "icx"
+      - "clang"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/cc"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/cc"
+      - "/usr/local/sbin/cc"
+      - "/usr/local/bin/cc"
+      - "/usr/sbin/cc"
+      - "/usr/bin/cc"
+      - "/home/bianbu/hxj/myenv/bin/gcc"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc"
+      - "/usr/local/sbin/gcc"
+      - "/usr/local/bin/gcc"
+      - "/usr/sbin/gcc"
+    found: "/usr/bin/gcc"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:501 (find_file)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:538 (CMAKE_DETERMINE_COMPILER_ID_WRITE)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:8 (CMAKE_DETERMINE_COMPILER_ID_BUILD)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:122 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "file"
+    variable: "src_in"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "CMakeCCompilerId.c.in"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/"
+    found: "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCCompilerId.c.in"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:122 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /usr/bin/gcc 
+      Build flags: -march=rv64gcv_zfh_zvfh_zba_zicbop;-mabi=lp64d;-fno-tree-vectorize;-fno-tree-loop-vectorize;-march=rv64gcv_zfh_zvfh_zba_zicbop;-mabi=lp64d;-fno-tree-vectorize;-fno-tree-loop-vectorize
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is GNU, found in:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/4.4.2/CompilerIdC/a.out
+      
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_AR"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/ar"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_RANLIB"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/ranlib"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_STRIP"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "strip"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/strip"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_LINKER"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ld"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/ld"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_NM"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "nm"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/nm"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_OBJDUMP"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "objdump"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/objdump"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_OBJCOPY"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "objcopy"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/objcopy"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_READELF"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "readelf"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/readelf"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_DLLTOOL"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "dlltool"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    searched_directories:
+      - "/usr/bin/dlltool"
+      - "/home/bianbu/hxj/myenv/bin/dlltool"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/dlltool"
+      - "/usr/local/sbin/dlltool"
+      - "/usr/local/bin/dlltool"
+      - "/usr/sbin/dlltool"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_ADDR2LINE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "addr2line"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    found: "/usr/bin/addr2line"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeFindBinUtils.cmake:247 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_TAPI"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "tapi"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    searched_directories:
+      - "/usr/bin/tapi"
+      - "/home/bianbu/hxj/myenv/bin/tapi"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/tapi"
+      - "/usr/local/sbin/tapi"
+      - "/usr/local/bin/tapi"
+      - "/usr/sbin/tapi"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Compiler/GNU-FindBinUtils.cmake:18 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:201 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER_AR"
+    description: "A wrapper around 'ar' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ar-14.2"
+      - "gcc-ar-14"
+      - "gcc-ar14"
+      - "gcc-ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    searched_directories:
+      - "/usr/bin/gcc-ar-14.2"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ar-14.2"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ar-14.2"
+      - "/usr/local/sbin/gcc-ar-14.2"
+      - "/usr/local/bin/gcc-ar-14.2"
+      - "/usr/sbin/gcc-ar-14.2"
+    found: "/usr/bin/gcc-ar-14"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Compiler/GNU-FindBinUtils.cmake:30 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCCompiler.cmake:201 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER_RANLIB"
+    description: "A wrapper around 'ranlib' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ranlib-14.2"
+      - "gcc-ranlib-14"
+      - "gcc-ranlib14"
+      - "gcc-ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    searched_directories:
+      - "/usr/bin/gcc-ranlib-14.2"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ranlib-14.2"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ranlib-14.2"
+      - "/usr/local/sbin/gcc-ranlib-14.2"
+      - "/usr/local/bin/gcc-ranlib-14.2"
+      - "/usr/sbin/gcc-ranlib-14.2"
+    found: "/usr/bin/gcc-ranlib-14"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompiler.cmake:54 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCXXCompiler.cmake:69 (_cmake_find_compiler)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_CXX_COMPILER"
+    description: "CXX compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "c++"
+      - "CC"
+      - "g++"
+      - "aCC"
+      - "cl"
+      - "bcc"
+      - "xlC"
+      - "icpx"
+      - "icx"
+      - "clang++"
+    candidate_directories:
+      - "/usr/bin/"
+    searched_directories:
+      - "/usr/bin/c++"
+      - "/usr/bin/CC"
+    found: "/usr/bin/g++"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:501 (find_file)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:538 (CMAKE_DETERMINE_COMPILER_ID_WRITE)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:8 (CMAKE_DETERMINE_COMPILER_ID_BUILD)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCXXCompiler.cmake:125 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "file"
+    variable: "src_in"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "CMakeCXXCompilerId.cpp.in"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/"
+    found: "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCXXCompilerId.cpp.in"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCXXCompiler.cmake:125 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+      Compiler: /usr/bin/g++ 
+      Build flags: -march=rv64gcv_zfh_zvfh_zba_zicbop;-mabi=lp64d;-fno-tree-vectorize;-fno-tree-loop-vectorize;-march=rv64gcv_zfh_zvfh_zba_zicbop;-mabi=lp64d;-fno-tree-vectorize;-fno-tree-loop-vectorize
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "a.out"
+      
+      The CXX compiler identification is GNU, found in:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/4.4.2/CompilerIdCXX/a.out
+      
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Compiler/GNU-FindBinUtils.cmake:18 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCXXCompiler.cmake:207 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_CXX_COMPILER_AR"
+    description: "A wrapper around 'ar' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ar-14.2"
+      - "gcc-ar-14"
+      - "gcc-ar14"
+      - "gcc-ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    searched_directories:
+      - "/usr/bin/gcc-ar-14.2"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ar-14.2"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ar-14.2"
+      - "/usr/local/sbin/gcc-ar-14.2"
+      - "/usr/local/bin/gcc-ar-14.2"
+      - "/usr/sbin/gcc-ar-14.2"
+    found: "/usr/bin/gcc-ar-14"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Compiler/GNU-FindBinUtils.cmake:30 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCXXCompiler.cmake:207 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_CXX_COMPILER_RANLIB"
+    description: "A wrapper around 'ranlib' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ranlib-14.2"
+      - "gcc-ranlib-14"
+      - "gcc-ranlib14"
+      - "gcc-ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+    searched_directories:
+      - "/usr/bin/gcc-ranlib-14.2"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ranlib-14.2"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ranlib-14.2"
+      - "/usr/local/sbin/gcc-ranlib-14.2"
+      - "/usr/local/bin/gcc-ranlib-14.2"
+      - "/usr/sbin/gcc-ranlib-14.2"
+    found: "/usr/bin/gcc-ranlib-14"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "build/installed"
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerABI.cmake:123 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-z0Ozqw"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-z0Ozqw"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: false
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-z0Ozqw'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_0948b/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_0948b.dir/build.make CMakeFiles/cmTC_0948b.dir/build
+        gmake[1]: Entering directory '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-z0Ozqw'
+        Building C object CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o
+        /usr/bin/gcc   -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize     -v -o CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o -c /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCCompilerABI.c
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/gcc
+        Target: riscv64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Bianbu 14.2.0-4ubuntu2~24.04bb2' --with-bugurl=file:///usr/share/doc/gcc-14/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --prefix=/usr --with-gcc-major-version-only --program-suffix=-14 --program-prefix=riscv64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-libquadmath --disable-libquadmath-support --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --disable-multilib --with-tune=spacemit-x60 --with-abi=lp64d --with-arch=rv64gc_zba_zbb_zbc_zbs_zicsr_zifencei --enable-checking=release --build=riscv64-linux-gnu --host=riscv64-linux-gnu --target=riscv64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=1
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 14.2.0 (Bianbu 14.2.0-4ubuntu2~24.04bb2) 
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_0948b.dir/'
+         /usr/libexec/gcc/riscv64-linux-gnu/14/cc1 -quiet -v -imultilib . -imultiarch riscv64-linux-gnu /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_0948b.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -mtune=spacemit-x60 -misa-spec=20191213 -mtls-dialect=trad -march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b -version -fno-tree-vectorize -fno-tree-loop-vectorize -fstack-protector-strong -Wformat -Wformat-security -o /tmp/cccTE3hz.s
+        GNU C17 (Bianbu 14.2.0-4ubuntu2~24.04bb2) version 14.2.0 (riscv64-linux-gnu)
+        	compiled by GNU C version 14.2.0, GMP version 6.3.0, MPFR version 4.2.1, MPC version 1.3.1, isl version isl-0.26-GMP
+        
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        ignoring nonexistent directory "/usr/local/include/riscv64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/include-fixed/riscv64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/include-fixed"
+        ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/../../../../riscv64-linux-gnu/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/lib/gcc/riscv64-linux-gnu/14/include
+         /usr/local/include
+         /usr/include/riscv64-linux-gnu
+         /usr/include
+        End of search list.
+        Compiler executable checksum: ea9fa15ed6080c59c65456880cbdf0c4
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_0948b.dir/'
+         as -v --traditional-format -fpic -march=rv64gcv_zfh_zvfh_zba_zicbop -march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b -mabi=lp64d -misa-spec=20191213 -o CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o /tmp/cccTE3hz.s
+        GNU assembler version 2.42 (riscv64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42
+        COMPILER_PATH=/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/:/usr/lib/gcc/riscv64-linux-gnu/14/:/usr/lib/gcc/riscv64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/riscv64-linux-gnu/14/:/lib/riscv64-linux-gnu/:/lib/:/usr/lib/riscv64-linux-gnu/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.'
+        Linking C executable cmTC_0948b
+        /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0948b.dir/link.txt --verbose=1
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/gcc
+        COLLECT_LTO_WRAPPER=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper
+        Target: riscv64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Bianbu 14.2.0-4ubuntu2~24.04bb2' --with-bugurl=file:///usr/share/doc/gcc-14/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --prefix=/usr --with-gcc-major-version-only --program-suffix=-14 --program-prefix=riscv64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-libquadmath --disable-libquadmath-support --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --disable-multilib --with-tune=spacemit-x60 --with-abi=lp64d --with-arch=rv64gc_zba_zbb_zbc_zbs_zicsr_zifencei --enable-checking=release --build=riscv64-linux-gnu --host=riscv64-linux-gnu --target=riscv64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=1
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 14.2.0 (Bianbu 14.2.0-4ubuntu2~24.04bb2) 
+        COMPILER_PATH=/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/:/usr/lib/gcc/riscv64-linux-gnu/14/:/usr/lib/gcc/riscv64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/riscv64-linux-gnu/14/:/lib/riscv64-linux-gnu/:/lib/:/usr/lib/riscv64-linux-gnu/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'cmTC_0948b' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_0948b.'
+         /usr/libexec/gcc/riscv64-linux-gnu/14/collect2 -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/ccSXK8Vr.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_0948b /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o
+        collect2 version 14.2.0
+        /usr/bin/ld -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/ccSXK8Vr.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_0948b /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o
+        GNU ld (GNU Binutils for Ubuntu) 2.42
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'cmTC_0948b' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_0948b.'
+        /usr/bin/gcc -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize    -latomic -latomic -v -Wl,-v CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o -o cmTC_0948b
+        gmake[1]: Leaving directory '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-z0Ozqw'
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerABI.cmake:255 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/lib/gcc/riscv64-linux-gnu/14/include]
+          add: [/usr/local/include]
+          add: [/usr/include/riscv64-linux-gnu]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/lib/gcc/riscv64-linux-gnu/14/include] ==> [/usr/lib/gcc/riscv64-linux-gnu/14/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include/riscv64-linux-gnu] ==> [/usr/include/riscv64-linux-gnu]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/lib/gcc/riscv64-linux-gnu/14/include;/usr/local/include;/usr/include/riscv64-linux-gnu;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerABI.cmake:291 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|wild|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|wild))("|,| |$)]
+        ignore line: [Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-z0Ozqw']
+        ignore line: []
+        ignore line: [Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_0948b/fast]
+        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_0948b.dir/build.make CMakeFiles/cmTC_0948b.dir/build]
+        ignore line: [gmake[1]: Entering directory '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-z0Ozqw']
+        ignore line: [Building C object CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o]
+        ignore line: [/usr/bin/gcc   -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize     -v -o CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o -c /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCCompilerABI.c]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/gcc]
+        ignore line: [Target: riscv64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Bianbu 14.2.0-4ubuntu2~24.04bb2' --with-bugurl=file:///usr/share/doc/gcc-14/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 rust --prefix=/usr --with-gcc-major-version-only --program-suffix=-14 --program-prefix=riscv64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-libquadmath --disable-libquadmath-support --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --disable-multilib --with-tune=spacemit-x60 --with-abi=lp64d --with-arch=rv64gc_zba_zbb_zbc_zbs_zicsr_zifencei --enable-checking=release --build=riscv64-linux-gnu --host=riscv64-linux-gnu --target=riscv64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=1]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 14.2.0 (Bianbu 14.2.0-4ubuntu2~24.04bb2) ]
+        ignore line: [COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_0948b.dir/']
+        ignore line: [ /usr/libexec/gcc/riscv64-linux-gnu/14/cc1 -quiet -v -imultilib . -imultiarch riscv64-linux-gnu /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_0948b.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -mtune=spacemit-x60 -misa-spec=20191213 -mtls-dialect=trad -march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b -version -fno-tree-vectorize -fno-tree-loop-vectorize -fstack-protector-strong -Wformat -Wformat-security -o /tmp/cccTE3hz.s]
+        ignore line: [GNU C17 (Bianbu 14.2.0-4ubuntu2~24.04bb2) version 14.2.0 (riscv64-linux-gnu)]
+        ignore line: [	compiled by GNU C version 14.2.0  GMP version 6.3.0  MPFR version 4.2.1  MPC version 1.3.1  isl version isl-0.26-GMP]
+        ignore line: []
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [ignoring nonexistent directory "/usr/local/include/riscv64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/include-fixed/riscv64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/include-fixed"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/../../../../riscv64-linux-gnu/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/lib/gcc/riscv64-linux-gnu/14/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include/riscv64-linux-gnu]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [Compiler executable checksum: ea9fa15ed6080c59c65456880cbdf0c4]
+        ignore line: [COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_0948b.dir/']
+        ignore line: [ as -v --traditional-format -fpic -march=rv64gcv_zfh_zvfh_zba_zicbop -march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b -mabi=lp64d -misa-spec=20191213 -o CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o /tmp/cccTE3hz.s]
+        ignore line: [GNU assembler version 2.42 (riscv64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/:/usr/lib/gcc/riscv64-linux-gnu/14/:/usr/lib/gcc/riscv64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/riscv64-linux-gnu/14/:/lib/riscv64-linux-gnu/:/lib/:/usr/lib/riscv64-linux-gnu/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.']
+        ignore line: [Linking C executable cmTC_0948b]
+        ignore line: [/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0948b.dir/link.txt --verbose=1]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/gcc]
+        ignore line: [COLLECT_LTO_WRAPPER=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper]
+        ignore line: [Target: riscv64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Bianbu 14.2.0-4ubuntu2~24.04bb2' --with-bugurl=file:///usr/share/doc/gcc-14/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 rust --prefix=/usr --with-gcc-major-version-only --program-suffix=-14 --program-prefix=riscv64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-libquadmath --disable-libquadmath-support --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --disable-multilib --with-tune=spacemit-x60 --with-abi=lp64d --with-arch=rv64gc_zba_zbb_zbc_zbs_zicsr_zifencei --enable-checking=release --build=riscv64-linux-gnu --host=riscv64-linux-gnu --target=riscv64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=1]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 14.2.0 (Bianbu 14.2.0-4ubuntu2~24.04bb2) ]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/:/usr/lib/gcc/riscv64-linux-gnu/14/:/usr/lib/gcc/riscv64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/riscv64-linux-gnu/14/:/lib/riscv64-linux-gnu/:/lib/:/usr/lib/riscv64-linux-gnu/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'cmTC_0948b' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_0948b.']
+        link line: [ /usr/libexec/gcc/riscv64-linux-gnu/14/collect2 -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/ccSXK8Vr.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_0948b /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o]
+          arg [/usr/libexec/gcc/riscv64-linux-gnu/14/collect2] ==> ignore
+          arg [-plugin] ==> ignore
+          arg [/usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so] ==> ignore
+          arg [-plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper] ==> ignore
+          arg [-plugin-opt=-fresolution=/tmp/ccSXK8Vr.res] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-hash-style=gnu] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-melf64lriscv] ==> ignore
+          arg [-X] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib/ld-linux-riscv64-lp64d.so.1] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-znow] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_0948b] ==> ignore
+          arg [/lib/riscv64-linux-gnu/Scrt1.o] ==> obj [/lib/riscv64-linux-gnu/Scrt1.o]
+          arg [/usr/lib/gcc/riscv64-linux-gnu/14/crti.o] ==> obj [/usr/lib/gcc/riscv64-linux-gnu/14/crti.o]
+          arg [/usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o] ==> obj [/usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o]
+          arg [-L/usr/lib/gcc/riscv64-linux-gnu/14] ==> dir [/usr/lib/gcc/riscv64-linux-gnu/14]
+          arg [-L/lib/riscv64-linux-gnu] ==> dir [/lib/riscv64-linux-gnu]
+          arg [-L/usr/lib/riscv64-linux-gnu] ==> dir [/usr/lib/riscv64-linux-gnu]
+          arg [-latomic] ==> lib [atomic]
+          arg [-latomic] ==> lib [atomic]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [-lc] ==> lib [c]
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [/usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o] ==> obj [/usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o]
+          arg [/usr/lib/gcc/riscv64-linux-gnu/14/crtn.o] ==> obj [/usr/lib/gcc/riscv64-linux-gnu/14/crtn.o]
+        ignore line: [collect2 version 14.2.0]
+        link line: [/usr/bin/ld -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/ccSXK8Vr.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_0948b /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o] ==> linker [/usr/bin/ld]
+        ignore line: [/usr/bin/ld -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/ccSXK8Vr.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_0948b /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_0948b.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o]
+        linker tool for 'C': /usr/bin/ld 
+        collapse library dir [/usr/lib/gcc/riscv64-linux-gnu/14] ==> [/usr/lib/gcc/riscv64-linux-gnu/14]
+        collapse library dir [/lib/riscv64-linux-gnu] ==> [/lib/riscv64-linux-gnu]
+        collapse library dir [/usr/lib/riscv64-linux-gnu] ==> [/usr/lib/riscv64-linux-gnu]
+        implicit libs: [atomic;atomic;gcc;gcc_s;c;gcc;gcc_s]
+        implicit objs: [/lib/riscv64-linux-gnu/Scrt1.o;/usr/lib/gcc/riscv64-linux-gnu/14/crti.o;/usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o;/usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o;/usr/lib/gcc/riscv64-linux-gnu/14/crtn.o]
+        implicit dirs: [/usr/lib/gcc/riscv64-linux-gnu/14;/lib/riscv64-linux-gnu;/usr/lib/riscv64-linux-gnu]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CMakeDetermineLinkerId.cmake:41 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerABI.cmake:337 (cmake_determine_linker_id)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the C compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils for Ubuntu) 2.42
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerABI.cmake:123 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    checks:
+      - "Detecting CXX compiler ABI info"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-Ytbmmj"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-Ytbmmj"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_CXX_SCAN_FOR_MODULES: "OFF"
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+    buildResult:
+      variable: "CMAKE_CXX_ABI_COMPILED"
+      cached: false
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-Ytbmmj'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f8104/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_f8104.dir/build.make CMakeFiles/cmTC_f8104.dir/build
+        gmake[1]: Entering directory '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-Ytbmmj'
+        Building CXX object CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o
+        /usr/bin/g++   -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize     -v -o CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o -c /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCXXCompilerABI.cpp
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/g++
+        Target: riscv64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Bianbu 14.2.0-4ubuntu2~24.04bb2' --with-bugurl=file:///usr/share/doc/gcc-14/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --prefix=/usr --with-gcc-major-version-only --program-suffix=-14 --program-prefix=riscv64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-libquadmath --disable-libquadmath-support --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --disable-multilib --with-tune=spacemit-x60 --with-abi=lp64d --with-arch=rv64gc_zba_zbb_zbc_zbs_zicsr_zifencei --enable-checking=release --build=riscv64-linux-gnu --host=riscv64-linux-gnu --target=riscv64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=1
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 14.2.0 (Bianbu 14.2.0-4ubuntu2~24.04bb2) 
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_f8104.dir/'
+         /usr/libexec/gcc/riscv64-linux-gnu/14/cc1plus -quiet -v -imultilib . -imultiarch riscv64-linux-gnu -D_GNU_SOURCE /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_f8104.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -mtune=spacemit-x60 -misa-spec=20191213 -mtls-dialect=trad -march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b -version -fno-tree-vectorize -fno-tree-loop-vectorize -fstack-protector-strong -Wformat -Wformat-security -o /tmp/cctMV4bP.s
+        GNU C++17 (Bianbu 14.2.0-4ubuntu2~24.04bb2) version 14.2.0 (riscv64-linux-gnu)
+        	compiled by GNU C version 14.2.0, GMP version 6.3.0, MPFR version 4.2.1, MPC version 1.3.1, isl version isl-0.26-GMP
+        
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        ignoring duplicate directory "/usr/include/riscv64-linux-gnu/c++/14"
+        ignoring nonexistent directory "/usr/local/include/riscv64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/include-fixed/riscv64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/include-fixed"
+        ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/../../../../riscv64-linux-gnu/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/include/c++/14
+         /usr/include/riscv64-linux-gnu/c++/14
+         /usr/include/c++/14/backward
+         /usr/lib/gcc/riscv64-linux-gnu/14/include
+         /usr/local/include
+         /usr/include/riscv64-linux-gnu
+         /usr/include
+        End of search list.
+        Compiler executable checksum: 197d366510ee86dff7cfc7f6f56bbc74
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_f8104.dir/'
+         as -v --traditional-format -fpic -march=rv64gcv_zfh_zvfh_zba_zicbop -march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b -mabi=lp64d -misa-spec=20191213 -o CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o /tmp/cctMV4bP.s
+        GNU assembler version 2.42 (riscv64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42
+        COMPILER_PATH=/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/:/usr/lib/gcc/riscv64-linux-gnu/14/:/usr/lib/gcc/riscv64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/riscv64-linux-gnu/14/:/lib/riscv64-linux-gnu/:/lib/:/usr/lib/riscv64-linux-gnu/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.'
+        Linking CXX executable cmTC_f8104
+        /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f8104.dir/link.txt --verbose=1
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/g++
+        COLLECT_LTO_WRAPPER=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper
+        Target: riscv64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Bianbu 14.2.0-4ubuntu2~24.04bb2' --with-bugurl=file:///usr/share/doc/gcc-14/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2,rust --prefix=/usr --with-gcc-major-version-only --program-suffix=-14 --program-prefix=riscv64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-libquadmath --disable-libquadmath-support --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --disable-multilib --with-tune=spacemit-x60 --with-abi=lp64d --with-arch=rv64gc_zba_zbb_zbc_zbs_zicsr_zifencei --enable-checking=release --build=riscv64-linux-gnu --host=riscv64-linux-gnu --target=riscv64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=1
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 14.2.0 (Bianbu 14.2.0-4ubuntu2~24.04bb2) 
+        COMPILER_PATH=/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/:/usr/lib/gcc/riscv64-linux-gnu/14/:/usr/lib/gcc/riscv64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/riscv64-linux-gnu/14/:/lib/riscv64-linux-gnu/:/lib/:/usr/lib/riscv64-linux-gnu/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'cmTC_f8104' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_f8104.'
+         /usr/libexec/gcc/riscv64-linux-gnu/14/collect2 -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/cc3jj4NF.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_f8104 /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o
+        collect2 version 14.2.0
+        /usr/bin/ld -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/cc3jj4NF.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_f8104 /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o
+        GNU ld (GNU Binutils for Ubuntu) 2.42
+        COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'cmTC_f8104' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_f8104.'
+        /usr/bin/g++ -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize    -latomic -latomic -v -Wl,-v CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_f8104
+        gmake[1]: Leaving directory '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-Ytbmmj'
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerABI.cmake:255 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed CXX implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/include/c++/14]
+          add: [/usr/include/riscv64-linux-gnu/c++/14]
+          add: [/usr/include/c++/14/backward]
+          add: [/usr/lib/gcc/riscv64-linux-gnu/14/include]
+          add: [/usr/local/include]
+          add: [/usr/include/riscv64-linux-gnu]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/include/c++/14] ==> [/usr/include/c++/14]
+        collapse include dir [/usr/include/riscv64-linux-gnu/c++/14] ==> [/usr/include/riscv64-linux-gnu/c++/14]
+        collapse include dir [/usr/include/c++/14/backward] ==> [/usr/include/c++/14/backward]
+        collapse include dir [/usr/lib/gcc/riscv64-linux-gnu/14/include] ==> [/usr/lib/gcc/riscv64-linux-gnu/14/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include/riscv64-linux-gnu] ==> [/usr/include/riscv64-linux-gnu]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/include/c++/14;/usr/include/riscv64-linux-gnu/c++/14;/usr/include/c++/14/backward;/usr/lib/gcc/riscv64-linux-gnu/14/include;/usr/local/include;/usr/include/riscv64-linux-gnu;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerABI.cmake:291 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|wild|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|wild))("|,| |$)]
+        ignore line: [Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-Ytbmmj']
+        ignore line: []
+        ignore line: [Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f8104/fast]
+        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_f8104.dir/build.make CMakeFiles/cmTC_f8104.dir/build]
+        ignore line: [gmake[1]: Entering directory '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-Ytbmmj']
+        ignore line: [Building CXX object CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o]
+        ignore line: [/usr/bin/g++   -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize     -v -o CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o -c /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/g++]
+        ignore line: [Target: riscv64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Bianbu 14.2.0-4ubuntu2~24.04bb2' --with-bugurl=file:///usr/share/doc/gcc-14/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 rust --prefix=/usr --with-gcc-major-version-only --program-suffix=-14 --program-prefix=riscv64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-libquadmath --disable-libquadmath-support --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --disable-multilib --with-tune=spacemit-x60 --with-abi=lp64d --with-arch=rv64gc_zba_zbb_zbc_zbs_zicsr_zifencei --enable-checking=release --build=riscv64-linux-gnu --host=riscv64-linux-gnu --target=riscv64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=1]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 14.2.0 (Bianbu 14.2.0-4ubuntu2~24.04bb2) ]
+        ignore line: [COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_f8104.dir/']
+        ignore line: [ /usr/libexec/gcc/riscv64-linux-gnu/14/cc1plus -quiet -v -imultilib . -imultiarch riscv64-linux-gnu -D_GNU_SOURCE /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_f8104.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -mtune=spacemit-x60 -misa-spec=20191213 -mtls-dialect=trad -march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b -version -fno-tree-vectorize -fno-tree-loop-vectorize -fstack-protector-strong -Wformat -Wformat-security -o /tmp/cctMV4bP.s]
+        ignore line: [GNU C++17 (Bianbu 14.2.0-4ubuntu2~24.04bb2) version 14.2.0 (riscv64-linux-gnu)]
+        ignore line: [	compiled by GNU C version 14.2.0  GMP version 6.3.0  MPFR version 4.2.1  MPC version 1.3.1  isl version isl-0.26-GMP]
+        ignore line: []
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [ignoring duplicate directory "/usr/include/riscv64-linux-gnu/c++/14"]
+        ignore line: [ignoring nonexistent directory "/usr/local/include/riscv64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/include-fixed/riscv64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/include-fixed"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/riscv64-linux-gnu/14/../../../../riscv64-linux-gnu/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/include/c++/14]
+        ignore line: [ /usr/include/riscv64-linux-gnu/c++/14]
+        ignore line: [ /usr/include/c++/14/backward]
+        ignore line: [ /usr/lib/gcc/riscv64-linux-gnu/14/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include/riscv64-linux-gnu]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [Compiler executable checksum: 197d366510ee86dff7cfc7f6f56bbc74]
+        ignore line: [COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_f8104.dir/']
+        ignore line: [ as -v --traditional-format -fpic -march=rv64gcv_zfh_zvfh_zba_zicbop -march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b -mabi=lp64d -misa-spec=20191213 -o CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o /tmp/cctMV4bP.s]
+        ignore line: [GNU assembler version 2.42 (riscv64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/:/usr/lib/gcc/riscv64-linux-gnu/14/:/usr/lib/gcc/riscv64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/riscv64-linux-gnu/14/:/lib/riscv64-linux-gnu/:/lib/:/usr/lib/riscv64-linux-gnu/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.']
+        ignore line: [Linking CXX executable cmTC_f8104]
+        ignore line: [/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f8104.dir/link.txt --verbose=1]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/g++]
+        ignore line: [COLLECT_LTO_WRAPPER=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper]
+        ignore line: [Target: riscv64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Bianbu 14.2.0-4ubuntu2~24.04bb2' --with-bugurl=file:///usr/share/doc/gcc-14/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 rust --prefix=/usr --with-gcc-major-version-only --program-suffix=-14 --program-prefix=riscv64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-libquadmath --disable-libquadmath-support --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --disable-multilib --with-tune=spacemit-x60 --with-abi=lp64d --with-arch=rv64gc_zba_zbb_zbc_zbs_zicsr_zifencei --enable-checking=release --build=riscv64-linux-gnu --host=riscv64-linux-gnu --target=riscv64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=1]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 14.2.0 (Bianbu 14.2.0-4ubuntu2~24.04bb2) ]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/14/:/usr/libexec/gcc/riscv64-linux-gnu/:/usr/lib/gcc/riscv64-linux-gnu/14/:/usr/lib/gcc/riscv64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/riscv64-linux-gnu/14/:/lib/riscv64-linux-gnu/:/lib/:/usr/lib/riscv64-linux-gnu/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-march=rv64gcv_zfh_zvfh_zba_zicbop' '-mabi=lp64d' '-fno-tree-vectorize' '-fno-tree-loop-vectorize' '-v' '-o' 'cmTC_f8104' '-shared-libgcc' '-mtune=spacemit-x60' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcv_zicbop_zicsr_zifencei_zfh_zfhmin_zba_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_f8104.']
+        link line: [ /usr/libexec/gcc/riscv64-linux-gnu/14/collect2 -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/cc3jj4NF.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_f8104 /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o]
+          arg [/usr/libexec/gcc/riscv64-linux-gnu/14/collect2] ==> ignore
+          arg [-plugin] ==> ignore
+          arg [/usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so] ==> ignore
+          arg [-plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper] ==> ignore
+          arg [-plugin-opt=-fresolution=/tmp/cc3jj4NF.res] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-hash-style=gnu] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-melf64lriscv] ==> ignore
+          arg [-X] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib/ld-linux-riscv64-lp64d.so.1] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-znow] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_f8104] ==> ignore
+          arg [/lib/riscv64-linux-gnu/Scrt1.o] ==> obj [/lib/riscv64-linux-gnu/Scrt1.o]
+          arg [/usr/lib/gcc/riscv64-linux-gnu/14/crti.o] ==> obj [/usr/lib/gcc/riscv64-linux-gnu/14/crti.o]
+          arg [/usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o] ==> obj [/usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o]
+          arg [-L/usr/lib/gcc/riscv64-linux-gnu/14] ==> dir [/usr/lib/gcc/riscv64-linux-gnu/14]
+          arg [-L/lib/riscv64-linux-gnu] ==> dir [/lib/riscv64-linux-gnu]
+          arg [-L/usr/lib/riscv64-linux-gnu] ==> dir [/usr/lib/riscv64-linux-gnu]
+          arg [-latomic] ==> lib [atomic]
+          arg [-latomic] ==> lib [atomic]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [-lstdc++] ==> lib [stdc++]
+          arg [-lm] ==> lib [m]
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [-lgcc] ==> lib [gcc]
+          arg [-lc] ==> lib [c]
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [-lgcc] ==> lib [gcc]
+          arg [/usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o] ==> obj [/usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o]
+          arg [/usr/lib/gcc/riscv64-linux-gnu/14/crtn.o] ==> obj [/usr/lib/gcc/riscv64-linux-gnu/14/crtn.o]
+        ignore line: [collect2 version 14.2.0]
+        link line: [/usr/bin/ld -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/cc3jj4NF.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_f8104 /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o] ==> linker [/usr/bin/ld]
+        ignore line: [/usr/bin/ld -plugin /usr/libexec/gcc/riscv64-linux-gnu/14/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/riscv64-linux-gnu/14/lto-wrapper -plugin-opt=-fresolution=/tmp/cc3jj4NF.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -hash-style=gnu --as-needed -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -pie -z now -z relro -o cmTC_f8104 /lib/riscv64-linux-gnu/Scrt1.o /usr/lib/gcc/riscv64-linux-gnu/14/crti.o /usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/riscv64-linux-gnu/14 -L/lib/riscv64-linux-gnu -L/usr/lib/riscv64-linux-gnu -latomic -latomic -v CMakeFiles/cmTC_f8104.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o /usr/lib/gcc/riscv64-linux-gnu/14/crtn.o]
+        linker tool for 'CXX': /usr/bin/ld 
+        collapse library dir [/usr/lib/gcc/riscv64-linux-gnu/14] ==> [/usr/lib/gcc/riscv64-linux-gnu/14]
+        collapse library dir [/lib/riscv64-linux-gnu] ==> [/lib/riscv64-linux-gnu]
+        collapse library dir [/usr/lib/riscv64-linux-gnu] ==> [/usr/lib/riscv64-linux-gnu]
+        implicit libs: [atomic;atomic;stdc++;m;gcc_s;gcc;c;gcc_s;gcc]
+        implicit objs: [/lib/riscv64-linux-gnu/Scrt1.o;/usr/lib/gcc/riscv64-linux-gnu/14/crti.o;/usr/lib/gcc/riscv64-linux-gnu/14/crtbeginS.o;/usr/lib/gcc/riscv64-linux-gnu/14/crtendS.o;/usr/lib/gcc/riscv64-linux-gnu/14/crtn.o]
+        implicit dirs: [/usr/lib/gcc/riscv64-linux-gnu/14;/lib/riscv64-linux-gnu;/usr/lib/riscv64-linux-gnu]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CMakeDetermineLinkerId.cmake:41 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerABI.cmake:337 (cmake_determine_linker_id)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the CXX compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils for Ubuntu) 2.42
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/FindGit.cmake:111 (find_program)"
+      - "cmake/git-vars.cmake:1 (find_package)"
+      - "CMakeLists.txt:46 (include)"
+    mode: "program"
+    variable: "GIT_EXECUTABLE"
+    description: "Git command line client"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "git"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/git"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/git"
+      - "/usr/local/sbin/git"
+      - "/usr/local/bin/git"
+      - "/usr/sbin/git"
+    found: "/usr/bin/git"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompiler.cmake:54 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineASMCompiler.cmake:61 (_cmake_find_compiler)"
+      - "ggml/CMakeLists.txt:3 (project)"
+    mode: "program"
+    variable: "CMAKE_ASM_COMPILER"
+    description: "ASM compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "/usr/bin/gcc"
+    candidate_directories:
+      - "/usr/bin/"
+    found: "/usr/bin/gcc"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineCompilerId.cmake:1328 (message)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineASMCompiler.cmake:174 (CMAKE_DETERMINE_COMPILER_ID_VENDOR)"
+      - "ggml/CMakeLists.txt:3 (project)"
+    message: |
+      Checking whether the ASM compiler is GNU using "--version" matched "(GNU assembler)|(GCC)|(Free Software Foundation)":
+      gcc (Bianbu 14.2.0-4ubuntu2~24.04bb2) 14.2.0
+      Copyright (C) 2024 Free Software Foundation, Inc.
+      This is free software; see the source for copying conditions.  There is NO
+      warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+      
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Compiler/GNU-FindBinUtils.cmake:18 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineASMCompiler.cmake:271 (include)"
+      - "ggml/CMakeLists.txt:3 (project)"
+    mode: "program"
+    variable: "CMAKE_ASM_COMPILER_AR"
+    description: "A wrapper around 'ar' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ar-"
+      - "gcc-ar-"
+      - "gcc-ar"
+      - "gcc-ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/usr/bin/gcc-ar-"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ar-"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ar-"
+      - "/usr/local/sbin/gcc-ar-"
+      - "/usr/local/bin/gcc-ar-"
+      - "/usr/sbin/gcc-ar-"
+      - "/usr/local/bin/gcc-ar-"
+      - "/usr/local/sbin/gcc-ar-"
+      - "/usr/local/gcc-ar-"
+      - "/usr/bin/gcc-ar-"
+      - "/usr/sbin/gcc-ar-"
+      - "/usr/gcc-ar-"
+      - "/bin/gcc-ar-"
+      - "/sbin/gcc-ar-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcc-ar-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcc-ar-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcc-ar-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcc-ar-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcc-ar-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcc-ar-"
+      - "/usr/X11R6/bin/gcc-ar-"
+      - "/usr/X11R6/sbin/gcc-ar-"
+      - "/usr/X11R6/gcc-ar-"
+      - "/usr/pkg/bin/gcc-ar-"
+      - "/usr/pkg/sbin/gcc-ar-"
+      - "/usr/pkg/gcc-ar-"
+      - "/opt/bin/gcc-ar-"
+      - "/opt/sbin/gcc-ar-"
+      - "/opt/gcc-ar-"
+      - "/usr/bin/gcc-ar-"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ar-"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ar-"
+      - "/usr/local/sbin/gcc-ar-"
+      - "/usr/local/bin/gcc-ar-"
+      - "/usr/sbin/gcc-ar-"
+      - "/usr/local/bin/gcc-ar-"
+      - "/usr/local/sbin/gcc-ar-"
+      - "/usr/local/gcc-ar-"
+      - "/usr/bin/gcc-ar-"
+      - "/usr/sbin/gcc-ar-"
+      - "/usr/gcc-ar-"
+      - "/bin/gcc-ar-"
+      - "/sbin/gcc-ar-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcc-ar-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcc-ar-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcc-ar-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcc-ar-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcc-ar-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcc-ar-"
+      - "/usr/X11R6/bin/gcc-ar-"
+      - "/usr/X11R6/sbin/gcc-ar-"
+      - "/usr/X11R6/gcc-ar-"
+      - "/usr/pkg/bin/gcc-ar-"
+      - "/usr/pkg/sbin/gcc-ar-"
+      - "/usr/pkg/gcc-ar-"
+      - "/opt/bin/gcc-ar-"
+      - "/opt/sbin/gcc-ar-"
+      - "/opt/gcc-ar-"
+      - "/usr/bin/gcc-ar"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ar"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ar"
+      - "/usr/local/sbin/gcc-ar"
+      - "/usr/local/bin/gcc-ar"
+      - "/usr/sbin/gcc-ar"
+      - "/usr/local/bin/gcc-ar"
+      - "/usr/local/sbin/gcc-ar"
+      - "/usr/local/gcc-ar"
+      - "/usr/bin/gcc-ar"
+      - "/usr/sbin/gcc-ar"
+      - "/usr/gcc-ar"
+      - "/bin/gcc-ar"
+      - "/sbin/gcc-ar"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcc-ar"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcc-ar"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcc-ar"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcc-ar"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcc-ar"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcc-ar"
+      - "/usr/X11R6/bin/gcc-ar"
+      - "/usr/X11R6/sbin/gcc-ar"
+      - "/usr/X11R6/gcc-ar"
+      - "/usr/pkg/bin/gcc-ar"
+      - "/usr/pkg/sbin/gcc-ar"
+      - "/usr/pkg/gcc-ar"
+      - "/opt/bin/gcc-ar"
+      - "/opt/sbin/gcc-ar"
+      - "/opt/gcc-ar"
+      - "/usr/bin/gcc-ar"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ar"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ar"
+      - "/usr/local/sbin/gcc-ar"
+      - "/usr/local/bin/gcc-ar"
+      - "/usr/sbin/gcc-ar"
+      - "/usr/local/bin/gcc-ar"
+      - "/usr/local/sbin/gcc-ar"
+      - "/usr/local/gcc-ar"
+      - "/usr/bin/gcc-ar"
+      - "/usr/sbin/gcc-ar"
+      - "/usr/gcc-ar"
+      - "/bin/gcc-ar"
+      - "/sbin/gcc-ar"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcc-ar"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcc-ar"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcc-ar"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcc-ar"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcc-ar"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcc-ar"
+      - "/usr/X11R6/bin/gcc-ar"
+      - "/usr/X11R6/sbin/gcc-ar"
+      - "/usr/X11R6/gcc-ar"
+      - "/usr/pkg/bin/gcc-ar"
+      - "/usr/pkg/sbin/gcc-ar"
+      - "/usr/pkg/gcc-ar"
+      - "/opt/bin/gcc-ar"
+      - "/opt/sbin/gcc-ar"
+      - "/opt/gcc-ar"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Compiler/GNU-FindBinUtils.cmake:30 (find_program)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CMakeDetermineASMCompiler.cmake:271 (include)"
+      - "ggml/CMakeLists.txt:3 (project)"
+    mode: "program"
+    variable: "CMAKE_ASM_COMPILER_RANLIB"
+    description: "A wrapper around 'ranlib' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ranlib-"
+      - "gcc-ranlib-"
+      - "gcc-ranlib"
+      - "gcc-ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/usr/bin/gcc-ranlib-"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ranlib-"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ranlib-"
+      - "/usr/local/sbin/gcc-ranlib-"
+      - "/usr/local/bin/gcc-ranlib-"
+      - "/usr/sbin/gcc-ranlib-"
+      - "/usr/local/bin/gcc-ranlib-"
+      - "/usr/local/sbin/gcc-ranlib-"
+      - "/usr/local/gcc-ranlib-"
+      - "/usr/bin/gcc-ranlib-"
+      - "/usr/sbin/gcc-ranlib-"
+      - "/usr/gcc-ranlib-"
+      - "/bin/gcc-ranlib-"
+      - "/sbin/gcc-ranlib-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcc-ranlib-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcc-ranlib-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcc-ranlib-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcc-ranlib-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcc-ranlib-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcc-ranlib-"
+      - "/usr/X11R6/bin/gcc-ranlib-"
+      - "/usr/X11R6/sbin/gcc-ranlib-"
+      - "/usr/X11R6/gcc-ranlib-"
+      - "/usr/pkg/bin/gcc-ranlib-"
+      - "/usr/pkg/sbin/gcc-ranlib-"
+      - "/usr/pkg/gcc-ranlib-"
+      - "/opt/bin/gcc-ranlib-"
+      - "/opt/sbin/gcc-ranlib-"
+      - "/opt/gcc-ranlib-"
+      - "/usr/bin/gcc-ranlib-"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ranlib-"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ranlib-"
+      - "/usr/local/sbin/gcc-ranlib-"
+      - "/usr/local/bin/gcc-ranlib-"
+      - "/usr/sbin/gcc-ranlib-"
+      - "/usr/local/bin/gcc-ranlib-"
+      - "/usr/local/sbin/gcc-ranlib-"
+      - "/usr/local/gcc-ranlib-"
+      - "/usr/bin/gcc-ranlib-"
+      - "/usr/sbin/gcc-ranlib-"
+      - "/usr/gcc-ranlib-"
+      - "/bin/gcc-ranlib-"
+      - "/sbin/gcc-ranlib-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcc-ranlib-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcc-ranlib-"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcc-ranlib-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcc-ranlib-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcc-ranlib-"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcc-ranlib-"
+      - "/usr/X11R6/bin/gcc-ranlib-"
+      - "/usr/X11R6/sbin/gcc-ranlib-"
+      - "/usr/X11R6/gcc-ranlib-"
+      - "/usr/pkg/bin/gcc-ranlib-"
+      - "/usr/pkg/sbin/gcc-ranlib-"
+      - "/usr/pkg/gcc-ranlib-"
+      - "/opt/bin/gcc-ranlib-"
+      - "/opt/sbin/gcc-ranlib-"
+      - "/opt/gcc-ranlib-"
+      - "/usr/bin/gcc-ranlib"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ranlib"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ranlib"
+      - "/usr/local/sbin/gcc-ranlib"
+      - "/usr/local/bin/gcc-ranlib"
+      - "/usr/sbin/gcc-ranlib"
+      - "/usr/local/bin/gcc-ranlib"
+      - "/usr/local/sbin/gcc-ranlib"
+      - "/usr/local/gcc-ranlib"
+      - "/usr/bin/gcc-ranlib"
+      - "/usr/sbin/gcc-ranlib"
+      - "/usr/gcc-ranlib"
+      - "/bin/gcc-ranlib"
+      - "/sbin/gcc-ranlib"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcc-ranlib"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcc-ranlib"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcc-ranlib"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcc-ranlib"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcc-ranlib"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcc-ranlib"
+      - "/usr/X11R6/bin/gcc-ranlib"
+      - "/usr/X11R6/sbin/gcc-ranlib"
+      - "/usr/X11R6/gcc-ranlib"
+      - "/usr/pkg/bin/gcc-ranlib"
+      - "/usr/pkg/sbin/gcc-ranlib"
+      - "/usr/pkg/gcc-ranlib"
+      - "/opt/bin/gcc-ranlib"
+      - "/opt/sbin/gcc-ranlib"
+      - "/opt/gcc-ranlib"
+      - "/usr/bin/gcc-ranlib"
+      - "/home/bianbu/hxj/myenv/bin/gcc-ranlib"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcc-ranlib"
+      - "/usr/local/sbin/gcc-ranlib"
+      - "/usr/local/bin/gcc-ranlib"
+      - "/usr/sbin/gcc-ranlib"
+      - "/usr/local/bin/gcc-ranlib"
+      - "/usr/local/sbin/gcc-ranlib"
+      - "/usr/local/gcc-ranlib"
+      - "/usr/bin/gcc-ranlib"
+      - "/usr/sbin/gcc-ranlib"
+      - "/usr/gcc-ranlib"
+      - "/bin/gcc-ranlib"
+      - "/sbin/gcc-ranlib"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcc-ranlib"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcc-ranlib"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcc-ranlib"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcc-ranlib"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcc-ranlib"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcc-ranlib"
+      - "/usr/X11R6/bin/gcc-ranlib"
+      - "/usr/X11R6/sbin/gcc-ranlib"
+      - "/usr/X11R6/gcc-ranlib"
+      - "/usr/pkg/bin/gcc-ranlib"
+      - "/usr/pkg/sbin/gcc-ranlib"
+      - "/usr/pkg/gcc-ranlib"
+      - "/opt/bin/gcc-ranlib"
+      - "/opt/sbin/gcc-ranlib"
+      - "/opt/gcc-ranlib"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "ggml/CMakeLists.txt:13 (find_program)"
+    mode: "program"
+    variable: "GIT_EXE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "git"
+      - "git.exe"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/git"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/git"
+      - "/usr/local/sbin/git"
+      - "/usr/local/bin/git"
+      - "/usr/sbin/git"
+    found: "/usr/bin/git"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/FindThreads.cmake:160 (check_c_source_compiles)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/FindThreads.cmake:226 (_threads_check_libc)"
+      - "ggml/CMakeLists.txt:294 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qnodei"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qnodei"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qnodei'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_9f397/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_9f397.dir/build.make CMakeFiles/cmTC_9f397.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qnodei”
+        Building C object CMakeFiles/cmTC_9f397.dir/src.c.o
+        /usr/bin/gcc -DCMAKE_HAVE_LIBC_PTHREAD  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize   -std=gnu11 -o CMakeFiles/cmTC_9f397.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qnodei/src.c
+        Linking C executable cmTC_9f397
+        /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_9f397.dir/link.txt --verbose=1
+        /usr/bin/gcc -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize    -latomic -latomic  CMakeFiles/cmTC_9f397.dir/src.c.o -o cmTC_9f397
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qnodei”
+        
+      exitCode: 0
+  -
+    kind: "find-v1"
+    backtrace:
+      - "ggml/src/CMakeLists.txt:69 (find_program)"
+    mode: "program"
+    variable: "GGML_CCACHE_FOUND"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ccache"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/ccache"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/ccache"
+      - "/usr/local/sbin/ccache"
+      - "/usr/local/bin/ccache"
+      - "/usr/sbin/ccache"
+      - "/usr/bin/ccache"
+      - "/usr/local/bin/ccache"
+      - "/usr/local/sbin/ccache"
+      - "/usr/local/ccache"
+      - "/usr/bin/ccache"
+      - "/usr/sbin/ccache"
+      - "/usr/ccache"
+      - "/bin/ccache"
+      - "/sbin/ccache"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/ccache"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/ccache"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/ccache"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/ccache"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/ccache"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/ccache"
+      - "/usr/X11R6/bin/ccache"
+      - "/usr/X11R6/sbin/ccache"
+      - "/usr/X11R6/ccache"
+      - "/usr/pkg/bin/ccache"
+      - "/usr/pkg/sbin/ccache"
+      - "/usr/pkg/ccache"
+      - "/opt/bin/ccache"
+      - "/opt/sbin/ccache"
+      - "/opt/ccache"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "ggml/src/CMakeLists.txt:70 (find_program)"
+    mode: "program"
+    variable: "GGML_SCCACHE_FOUND"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "sccache"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/sccache"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/sccache"
+      - "/usr/local/sbin/sccache"
+      - "/usr/local/bin/sccache"
+      - "/usr/sbin/sccache"
+      - "/usr/bin/sccache"
+      - "/usr/local/bin/sccache"
+      - "/usr/local/sbin/sccache"
+      - "/usr/local/sccache"
+      - "/usr/bin/sccache"
+      - "/usr/sbin/sccache"
+      - "/usr/sccache"
+      - "/bin/sccache"
+      - "/sbin/sccache"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/sccache"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/sccache"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sccache"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/sccache"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/sccache"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sccache"
+      - "/usr/X11R6/bin/sccache"
+      - "/usr/X11R6/sbin/sccache"
+      - "/usr/X11R6/sccache"
+      - "/usr/pkg/bin/sccache"
+      - "/usr/pkg/sbin/sccache"
+      - "/usr/pkg/sccache"
+      - "/opt/bin/sccache"
+      - "/opt/sbin/sccache"
+      - "/opt/sccache"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:11 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_IME1"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-tepu9G"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-tepu9G"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_IME1"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-tepu9G'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_b8917/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_b8917.dir/build.make CMakeFiles/cmTC_b8917.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-tepu9G”
+        Building C object CMakeFiles/cmTC_b8917.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_IME1  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_b8917.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-tepu9G/src.c
+        Linking C executable cmTC_b8917
+        /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b8917.dir/link.txt --verbose=1
+        /usr/bin/gcc -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop  -latomic -latomic  CMakeFiles/cmTC_b8917.dir/src.c.o -o cmTC_b8917
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-tepu9G”
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:12 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_VMADOT_S4"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-jovU7R"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-jovU7R"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_VMADOT_S4"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-jovU7R'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_a9668/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_a9668.dir/build.make CMakeFiles/cmTC_a9668.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-jovU7R”
+        Building C object CMakeFiles/cmTC_a9668.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_VMADOT_S4  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_a9668.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-jovU7R/src.c
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-jovU7R/src.c: Assembler messages:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-jovU7R/src.c:1: 错误：illegal operands `vmadot v2,v0,v1,i4'
+        gmake[1]: *** [CMakeFiles/cmTC_a9668.dir/build.make:81：CMakeFiles/cmTC_a9668.dir/src.c.o] 错误 1
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-jovU7R”
+        gmake: *** [Makefile:134：cmTC_a9668/fast] 错误 2
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:13 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_VMADOT_S8"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-imGNKw"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-imGNKw"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_VMADOT_S8"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-imGNKw'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f6074/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_f6074.dir/build.make CMakeFiles/cmTC_f6074.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-imGNKw”
+        Building C object CMakeFiles/cmTC_f6074.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_VMADOT_S8  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_f6074.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-imGNKw/src.c
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-imGNKw/src.c: Assembler messages:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-imGNKw/src.c:1: 错误：illegal operands `vmadot v2,v0,v1,i8'
+        gmake[1]: *** [CMakeFiles/cmTC_f6074.dir/build.make:81：CMakeFiles/cmTC_f6074.dir/src.c.o] 错误 1
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-imGNKw”
+        gmake: *** [Makefile:134：cmTC_f6074/fast] 错误 2
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:14 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_VFWMADOT_FP16"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-lAoTyN"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-lAoTyN"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_VFWMADOT_FP16"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-lAoTyN'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_ac9d4/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_ac9d4.dir/build.make CMakeFiles/cmTC_ac9d4.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-lAoTyN”
+        Building C object CMakeFiles/cmTC_ac9d4.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_VFWMADOT_FP16  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_ac9d4.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-lAoTyN/src.c
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-lAoTyN/src.c: Assembler messages:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-lAoTyN/src.c:1: 错误：unrecognized opcode `vfwmadot v2,v0,v1,fp16'
+        gmake[1]: *** [CMakeFiles/cmTC_ac9d4.dir/build.make:81：CMakeFiles/cmTC_ac9d4.dir/src.c.o] 错误 1
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-lAoTyN”
+        gmake: *** [Makefile:134：cmTC_ac9d4/fast] 错误 2
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:15 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_VFMADOT_S4"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qFMfyc"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qFMfyc"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_VFMADOT_S4"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qFMfyc'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_142fb/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_142fb.dir/build.make CMakeFiles/cmTC_142fb.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qFMfyc”
+        Building C object CMakeFiles/cmTC_142fb.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_VFMADOT_S4  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_142fb.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qFMfyc/src.c
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qFMfyc/src.c: Assembler messages:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qFMfyc/src.c:1: 错误：unrecognized opcode `vmadot.hp v2,v0,v1,v0,0,i4'
+        gmake[1]: *** [CMakeFiles/cmTC_142fb.dir/build.make:81：CMakeFiles/cmTC_142fb.dir/src.c.o] 错误 1
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qFMfyc”
+        gmake: *** [Makefile:134：cmTC_142fb/fast] 错误 2
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:16 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_VFMADOT_S8"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qTyVNU"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qTyVNU"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_VFMADOT_S8"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qTyVNU'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_54ad1/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_54ad1.dir/build.make CMakeFiles/cmTC_54ad1.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qTyVNU”
+        Building C object CMakeFiles/cmTC_54ad1.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_VFMADOT_S8  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_54ad1.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qTyVNU/src.c
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qTyVNU/src.c: Assembler messages:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qTyVNU/src.c:1: 错误：unrecognized opcode `vmadot.hp v2,v0,v1,v0,0,i8'
+        gmake[1]: *** [CMakeFiles/cmTC_54ad1.dir/build.make:81：CMakeFiles/cmTC_54ad1.dir/src.c.o] 错误 1
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-qTyVNU”
+        gmake: *** [Makefile:134：cmTC_54ad1/fast] 错误 2
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:17 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_VMADOTN"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-CRXu0L"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-CRXu0L"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_VMADOTN"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-CRXu0L'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_8378a/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_8378a.dir/build.make CMakeFiles/cmTC_8378a.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-CRXu0L”
+        Building C object CMakeFiles/cmTC_8378a.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_VMADOTN  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_8378a.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-CRXu0L/src.c
+        Linking C executable cmTC_8378a
+        /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_8378a.dir/link.txt --verbose=1
+        /usr/bin/gcc -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop  -latomic -latomic  CMakeFiles/cmTC_8378a.dir/src.c.o -o cmTC_8378a
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-CRXu0L”
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:18 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_VPACK"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-bEYHfB"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-bEYHfB"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_VPACK"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-bEYHfB'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_431ec/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_431ec.dir/build.make CMakeFiles/cmTC_431ec.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-bEYHfB”
+        Building C object CMakeFiles/cmTC_431ec.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_VPACK  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_431ec.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-bEYHfB/src.c
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-bEYHfB/src.c: Assembler messages:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-bEYHfB/src.c:1: 错误：unrecognized opcode `vpack.vv v2,v0,v1,2'
+        gmake[1]: *** [CMakeFiles/cmTC_431ec.dir/build.make:81：CMakeFiles/cmTC_431ec.dir/src.c.o] 错误 1
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-bEYHfB”
+        gmake: *** [Makefile:134：cmTC_431ec/fast] 错误 2
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake:81 (try_compile)"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "ggml/src/ggml-cpu/cmake/FindSMTIME.cmake:19 (check_c_source_compiles)"
+      - "ggml/src/ggml-cpu/CMakeLists.txt:447 (include)"
+      - "ggml/src/CMakeLists.txt:586 (ggml_add_cpu_backend_variant_impl)"
+    checks:
+      - "Performing Test SPACEMIT_RISCV_COMPILER_SUPPORT_VNPACK"
+    directories:
+      source: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-A1zodM"
+      binary: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-A1zodM"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "-march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -latomic -latomic"
+      CMAKE_MODULE_PATH: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/cmake/;/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/ggml/cmake/"
+    buildResult:
+      variable: "SPACEMIT_RISCV_COMPILER_SUPPORT_VNPACK"
+      cached: true
+      stdout: |
+        Change Dir: '/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-A1zodM'
+        
+        Run Build Command(s): /home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_585a6/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_585a6.dir/build.make CMakeFiles/cmTC_585a6.dir/build
+        gmake[1]: 进入目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-A1zodM”
+        Building C object CMakeFiles/cmTC_585a6.dir/src.c.o
+        /usr/bin/gcc -DSPACEMIT_RISCV_COMPILER_SUPPORT_VNPACK  -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -march=rv64gcv_zfh_zvfh_zba_zicbop -std=gnu11 -o CMakeFiles/cmTC_585a6.dir/src.c.o -c /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-A1zodM/src.c
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-A1zodM/src.c: Assembler messages:
+        /home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-A1zodM/src.c:1: 错误：unrecognized opcode `vnspack.vv v2,v0,v1,2'
+        gmake[1]: *** [CMakeFiles/cmTC_585a6.dir/build.make:81：CMakeFiles/cmTC_585a6.dir/src.c.o] 错误 1
+        gmake[1]: 离开目录“/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/CMakeFiles/CMakeScratch/TryCompile-A1zodM”
+        gmake: *** [Makefile:134：cmTC_585a6/fast] 错误 2
+        
+      exitCode: 2
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CTest.cmake:171 (find_program)"
+      - "CMakeLists.txt:234 (include)"
+    mode: "program"
+    variable: "GITCOMMAND"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "git"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/git"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/git"
+      - "/usr/local/sbin/git"
+      - "/usr/local/bin/git"
+      - "/usr/sbin/git"
+    found: "/usr/bin/git"
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CTest.cmake:188 (find_program)"
+      - "CMakeLists.txt:234 (include)"
+    mode: "program"
+    variable: "MEMORYCHECK_COMMAND"
+    description: "Path to the memory checking command, used for memory error detection."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "purify"
+      - "valgrind"
+      - "boundscheck"
+      - "drmemory"
+      - "cuda-memcheck"
+      - "compute-sanitizer"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/purify"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/purify"
+      - "/usr/local/sbin/purify"
+      - "/usr/local/bin/purify"
+      - "/usr/sbin/purify"
+      - "/usr/bin/purify"
+      - "/usr/local/bin/purify"
+      - "/usr/local/sbin/purify"
+      - "/usr/local/purify"
+      - "/usr/bin/purify"
+      - "/usr/sbin/purify"
+      - "/usr/purify"
+      - "/bin/purify"
+      - "/sbin/purify"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/purify"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/purify"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/purify"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/purify"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/purify"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/purify"
+      - "/usr/X11R6/bin/purify"
+      - "/usr/X11R6/sbin/purify"
+      - "/usr/X11R6/purify"
+      - "/usr/pkg/bin/purify"
+      - "/usr/pkg/sbin/purify"
+      - "/usr/pkg/purify"
+      - "/opt/bin/purify"
+      - "/opt/sbin/purify"
+      - "/opt/purify"
+      - "/home/bianbu/hxj/myenv/bin/valgrind"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/valgrind"
+      - "/usr/local/sbin/valgrind"
+      - "/usr/local/bin/valgrind"
+      - "/usr/sbin/valgrind"
+      - "/usr/bin/valgrind"
+      - "/usr/local/bin/valgrind"
+      - "/usr/local/sbin/valgrind"
+      - "/usr/local/valgrind"
+      - "/usr/bin/valgrind"
+      - "/usr/sbin/valgrind"
+      - "/usr/valgrind"
+      - "/bin/valgrind"
+      - "/sbin/valgrind"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/valgrind"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/valgrind"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/valgrind"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/valgrind"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/valgrind"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/valgrind"
+      - "/usr/X11R6/bin/valgrind"
+      - "/usr/X11R6/sbin/valgrind"
+      - "/usr/X11R6/valgrind"
+      - "/usr/pkg/bin/valgrind"
+      - "/usr/pkg/sbin/valgrind"
+      - "/usr/pkg/valgrind"
+      - "/opt/bin/valgrind"
+      - "/opt/sbin/valgrind"
+      - "/opt/valgrind"
+      - "/home/bianbu/hxj/myenv/bin/boundscheck"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/boundscheck"
+      - "/usr/local/sbin/boundscheck"
+      - "/usr/local/bin/boundscheck"
+      - "/usr/sbin/boundscheck"
+      - "/usr/bin/boundscheck"
+      - "/usr/local/bin/boundscheck"
+      - "/usr/local/sbin/boundscheck"
+      - "/usr/local/boundscheck"
+      - "/usr/bin/boundscheck"
+      - "/usr/sbin/boundscheck"
+      - "/usr/boundscheck"
+      - "/bin/boundscheck"
+      - "/sbin/boundscheck"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/boundscheck"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/boundscheck"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/boundscheck"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/boundscheck"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/boundscheck"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/boundscheck"
+      - "/usr/X11R6/bin/boundscheck"
+      - "/usr/X11R6/sbin/boundscheck"
+      - "/usr/X11R6/boundscheck"
+      - "/usr/pkg/bin/boundscheck"
+      - "/usr/pkg/sbin/boundscheck"
+      - "/usr/pkg/boundscheck"
+      - "/opt/bin/boundscheck"
+      - "/opt/sbin/boundscheck"
+      - "/opt/boundscheck"
+      - "/home/bianbu/hxj/myenv/bin/drmemory"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/drmemory"
+      - "/usr/local/sbin/drmemory"
+      - "/usr/local/bin/drmemory"
+      - "/usr/sbin/drmemory"
+      - "/usr/bin/drmemory"
+      - "/usr/local/bin/drmemory"
+      - "/usr/local/sbin/drmemory"
+      - "/usr/local/drmemory"
+      - "/usr/bin/drmemory"
+      - "/usr/sbin/drmemory"
+      - "/usr/drmemory"
+      - "/bin/drmemory"
+      - "/sbin/drmemory"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/drmemory"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/drmemory"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/drmemory"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/drmemory"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/drmemory"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/drmemory"
+      - "/usr/X11R6/bin/drmemory"
+      - "/usr/X11R6/sbin/drmemory"
+      - "/usr/X11R6/drmemory"
+      - "/usr/pkg/bin/drmemory"
+      - "/usr/pkg/sbin/drmemory"
+      - "/usr/pkg/drmemory"
+      - "/opt/bin/drmemory"
+      - "/opt/sbin/drmemory"
+      - "/opt/drmemory"
+      - "/home/bianbu/hxj/myenv/bin/cuda-memcheck"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/cuda-memcheck"
+      - "/usr/local/sbin/cuda-memcheck"
+      - "/usr/local/bin/cuda-memcheck"
+      - "/usr/sbin/cuda-memcheck"
+      - "/usr/bin/cuda-memcheck"
+      - "/usr/local/bin/cuda-memcheck"
+      - "/usr/local/sbin/cuda-memcheck"
+      - "/usr/local/cuda-memcheck"
+      - "/usr/bin/cuda-memcheck"
+      - "/usr/sbin/cuda-memcheck"
+      - "/usr/cuda-memcheck"
+      - "/bin/cuda-memcheck"
+      - "/sbin/cuda-memcheck"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/cuda-memcheck"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/cuda-memcheck"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/cuda-memcheck"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/cuda-memcheck"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/cuda-memcheck"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/cuda-memcheck"
+      - "/usr/X11R6/bin/cuda-memcheck"
+      - "/usr/X11R6/sbin/cuda-memcheck"
+      - "/usr/X11R6/cuda-memcheck"
+      - "/usr/pkg/bin/cuda-memcheck"
+      - "/usr/pkg/sbin/cuda-memcheck"
+      - "/usr/pkg/cuda-memcheck"
+      - "/opt/bin/cuda-memcheck"
+      - "/opt/sbin/cuda-memcheck"
+      - "/opt/cuda-memcheck"
+      - "/home/bianbu/hxj/myenv/bin/compute-sanitizer"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/compute-sanitizer"
+      - "/usr/local/sbin/compute-sanitizer"
+      - "/usr/local/bin/compute-sanitizer"
+      - "/usr/sbin/compute-sanitizer"
+      - "/usr/bin/compute-sanitizer"
+      - "/usr/local/bin/compute-sanitizer"
+      - "/usr/local/sbin/compute-sanitizer"
+      - "/usr/local/compute-sanitizer"
+      - "/usr/bin/compute-sanitizer"
+      - "/usr/sbin/compute-sanitizer"
+      - "/usr/compute-sanitizer"
+      - "/bin/compute-sanitizer"
+      - "/sbin/compute-sanitizer"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/compute-sanitizer"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/compute-sanitizer"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/compute-sanitizer"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/compute-sanitizer"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/compute-sanitizer"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/compute-sanitizer"
+      - "/usr/X11R6/bin/compute-sanitizer"
+      - "/usr/X11R6/sbin/compute-sanitizer"
+      - "/usr/X11R6/compute-sanitizer"
+      - "/usr/pkg/bin/compute-sanitizer"
+      - "/usr/pkg/sbin/compute-sanitizer"
+      - "/usr/pkg/compute-sanitizer"
+      - "/opt/bin/compute-sanitizer"
+      - "/opt/sbin/compute-sanitizer"
+      - "/opt/compute-sanitizer"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/share/cmake-4.4/Modules/CTest.cmake:196 (find_program)"
+      - "CMakeLists.txt:234 (include)"
+    mode: "program"
+    variable: "COVERAGE_COMMAND"
+    description: "Path to the coverage program that CTest uses for performing coverage inspection"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcov"
+    candidate_directories:
+      - "/home/bianbu/hxj/myenv/bin/"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/home/bianbu/hxj/myenv/bin/gcov"
+      - "/usr/lib/code-server/lib/vscode/bin/remote-cli/gcov"
+      - "/usr/local/sbin/gcov"
+      - "/usr/local/bin/gcov"
+      - "/usr/sbin/gcov"
+      - "/usr/bin/gcov"
+      - "/usr/local/bin/gcov"
+      - "/usr/local/sbin/gcov"
+      - "/usr/local/gcov"
+      - "/usr/bin/gcov"
+      - "/usr/sbin/gcov"
+      - "/usr/gcov"
+      - "/bin/gcov"
+      - "/sbin/gcov"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/bin/gcov"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/sbin/gcov"
+      - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data/gcov"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/bin/gcov"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/sbin/gcov"
+      - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed/gcov"
+      - "/usr/X11R6/bin/gcov"
+      - "/usr/X11R6/sbin/gcov"
+      - "/usr/X11R6/gcov"
+      - "/usr/pkg/bin/gcov"
+      - "/usr/pkg/sbin/gcov"
+      - "/usr/pkg/gcov"
+      - "/opt/bin/gcov"
+      - "/opt/sbin/gcov"
+      - "/opt/gcov"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/lib/code-server/lib/vscode/bin/remote-cli"
+        - "/home/bianbu/hxj/myenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+      CMAKE_INSTALL_PREFIX: "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/bianbu/hxj/myenv/lib/python3.12/site-packages/cmake/data"
+        - "/home/bianbu/hxj/python-proj/comv2-riscv/llama.cpp/build/installed"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+...
