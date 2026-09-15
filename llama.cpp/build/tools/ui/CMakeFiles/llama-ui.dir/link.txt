@@ -1,2 +1,0 @@
-/usr/bin/ar qc libllama-ui.a "CMakeFiles/llama-ui.dir/ui.cpp.o"
-/usr/bin/ranlib libllama-ui.a

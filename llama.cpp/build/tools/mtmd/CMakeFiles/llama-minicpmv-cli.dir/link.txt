@@ -1,1 +1,0 @@
-/usr/bin/g++ -march=rv64gcv_zfh_zvfh_zba_zicbop -mabi=lp64d -fno-tree-vectorize -fno-tree-loop-vectorize  -O3 -DNDEBUG  -latomic -Wl,--dependency-file=CMakeFiles/llama-minicpmv-cli.dir/link.d "CMakeFiles/llama-minicpmv-cli.dir/deprecation-warning.cpp.o" -o ../../bin/llama-minicpmv-cli
