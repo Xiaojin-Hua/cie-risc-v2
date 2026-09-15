@@ -11,7 +11,7 @@
 
 热点循环里通过 `dst->nb[]`/`state->nb[]` 等**指针间接取 stride**，别名分析阻止了寄存器提升，编译器每轮重算地址。把这些 stride/data **提升为局部变量**后：
 
-- decode：单节点 **209 µs → 78 µs（−63%）**
+- decode：单节点 **209 µs → 78 µs（−63%）**
 - prefill：17838 µs（−1.6%，噪声级） 属真实正向（decode 明显、prefill 无回退）。
 
 |      | pp128      | tg128     |
@@ -37,7 +37,7 @@
 | tg128 | 4.33     |
 
 
-## 优化5(最优版本)： 把 S_v² 状态的访存从每 token 一次降到每 chunk 一次，代价是每 token 多 ~3C·S_v 的 c×c 小矩阵算力
+## 优化5： 把 S_v² 状态的访存从每 token 一次降到每 chunk 一次，代价是每 token 多 ~3C·S_v 的 c×c 小矩阵算力
 
 按照chunk块大小扫描访存（pp128，基线 25.7）：C=1 25.23 | C=4 25.93 | **C=8 25.95** | C=16 25.76 | C=32 25.02 | C=64 24.52 | C=128 22.27。**小块才赢**——这跟"访存省 1/C、算力多 3C·S_v"的代数直觉相反，实测是额外算力而非访存主导。
 
@@ -48,7 +48,7 @@
 
 
 
-## 优化6：算子融合和权重量化分析
+## 优化6(最优版本)：算子融合和权重量化分析
 ### 一、算子耗时分析（`GGML_SPACEMIT_OP_STATS=1`，同进程分 PREFILL/DECODE）
 
 | 算子              | PREFILL   | DECODE    | 计算方式                                         | 瓶颈                                    |
@@ -80,7 +80,7 @@ llama-quantize --allow-requantize \
 
 **2. 代码侧：循环状态 `get_rows` → 门控 view** `build_rs` 原来用 `ggml_get_rows` 把 recurrent cache 整行拷成一个新张量，18 层×(SSM+conv)/token = 18 MiB 读 + 18 MiB 写，而它只被 GDN 消费。当只有一个 recurrent slot 时（实测 `n_rs=1, n_seqs=1, head=0`）这个拷贝毫无意义 → 改为 `ggml_view_2d` 直接指向 cache 行（门控 `n_rs==1 && n_seqs==1 && rs_head==0`，可用 `GGML_SPACEMIT_RS_VIEW=0` 关闭）。GDN kernel 本来就是先 `memcpy(s_out, s_in)` 再原地更新，读写别名到同一行是安全的。
 
-- 实测 **tg128 +6.7%（4.67→4.98）**，decode 的 GET_ROWS 从 999,547 µs 掉到 **~2 ms（0.0%）**。
+- 实测 **tg128 +6.7%（4.67→4.98）**，decode 的 GET_ROWS 从 999,547 µs 掉到 **~2 ms（0.0%）**。
 
 |       | 量化    | 量化+融合 |
 | ----- | ----- | ----- |
@@ -143,9 +143,9 @@ Qwen3.5单层Decode层中每一个算子计算运行后端位置分布图。从�
 
 #### 优化说明
 使用整型滑动窗口点积矩阵乘加（int8 类型）实现模型的ssm_conv1d的卷积操作，包括：
-    - `smt.vmadot1` / `smt.vmadot1u` / `smt.vmadot1su` / `smt.vmadot1us`
-    - `smt.vmadot2` / `smt.vmadot2u` / `smt.vmadot2su` / `smt.vmadot2us`
-    - `smt.vmadot3` / `smt.vmadot3u` / `smt.vmadot3su` / `smt.vmadot3us`
+    - `smt.vmadot1` / `smt.vmadot1u` / `smt.vmadot1su` / `smt.vmadot1us`
+    - `smt.vmadot2` / `smt.vmadot2u` / `smt.vmadot2su` / `smt.vmadot2us`
+    - `smt.vmadot3` / `smt.vmadot3u` / `smt.vmadot3su` / `smt.vmadot3us`
 使用支持的卷积乘加指令，将卷积运算由原来的cpu转移到ai算力中，但是从实验结果来看，这个功能效果没有实现出来
 #### 评测结果
 结论说明：相对于基线优化不明显。但是还是有实现提高性能的空间。
@@ -169,7 +169,7 @@ Qwen3.5单层Decode层中每一个算子计算运行后端位置分布图。从�
 | tg128 | 3.07  | 4.02  | 4.14 t/s  | +3%        |
 #### 说明
 
-- 重布局连续分布化：把非连续的拼接张量在进入 concat 前物化成连续张量，concat 内核于是只用 `memcpy`，不再走传统逐元素兜底。
+- 重布局连续分布化：把非连续的拼接张量在进入 concat 前物化成连续张量，concat 内核于是只用 `memcpy`，不再走传统逐元素兜底。
 
 ### 2.3 优化点3：增加i8i8，将其中的耗时concat操作进行与后续算子进行融合
 #### 优化说明
@@ -323,44 +323,44 @@ CMMLU 是一个包含了 67 个主题的中文评测数据集，涉及自然科�
 **Qwen3.5-2B-Q4_1（base模型）**
 准确率：
 ```
-    {
-        "accuracy_num": 73,
-        "accuracy ratio (%)": 45.625
-    }
+    {
+        "accuracy_num": 73,
+        "accuracy ratio (%)": 45.625
+    }
 ```
 
 **Qwen3.5-4B-Q4_0（base模型）**
 准确率：
 ```
-    {
-        "accuracy_num": 115,
-        "accuracy ratio (%)": 71.875
-    }
+    {
+        "accuracy_num": 115,
+        "accuracy ratio (%)": 71.875
+    }
 ```
 **Qwen3.5-2B-Q4_1（ssm_out + token_emb 量化版本优化改进）**
 准确率：
 ```
-    {
-        "accuracy ratio (%)": 50.625
-    }
+    {
+        "accuracy ratio (%)": 50.625
+    }
 ```
 **准确度测试回答的样例展示**
 ```
-    {
+    {
 
-        "id": 15,
-        "question": "某单位组织职工分小组进行摘草莓趣味比赛，甲、乙、丙3人分属3个小组。3人摘得的草莓数量情况如下：甲和属于第3小组的那位摘得的数量不一样，丙比属于第1小组的那位摘得少，3人中第3小组的那位比乙摘得多。若将3人按摘得的草莓数量从多到少排列，正确的是",
-        "real_answer": "B",
-        "predict": "B"
-    },
+        "id": 15,
+        "question": "某单位组织职工分小组进行摘草莓趣味比赛，甲、乙、丙3人分属3个小组。3人摘得的草莓数量情况如下：甲和属于第3小组的那位摘得的数量不一样，丙比属于第1小组的那位摘得少，3人中第3小组的那位比乙摘得多。若将3人按摘得的草莓数量从多到少排列，正确的是",
+        "real_answer": "B",
+        "predict": "B"
+    },
 
-    {
-        "id": 16,
-        "question": "社会信用体系的建立有利于提高全社会的诚信意识和信用水平，下列关于国家加快社会信用体系建设的说法错误的是",
-        "real_answer": "B",
-        "predict": "C"
+    {
+        "id": 16,
+        "question": "社会信用体系的建立有利于提高全社会的诚信意识和信用水平，下列关于国家加快社会信用体系建设的说法错误的是",
+        "real_answer": "B",
+        "predict": "C"
 
-    },
+    },
 ```
 
 
@@ -476,7 +476,7 @@ CMMLU 是一个包含了 67 个主题的中文评测数据集，涉及自然科�
     - 支持 256 位向量扩展（Vector Extension）
 - DDR 内存
   - 支持双芯片片选，32 位 LPDDR4/LPDDR4x SDRAM，传输速率高达 2666 Mbps，最大支持 16 GB 容量
-![[中科华创-装备智脑/周会/Appendix/Pasted image 20260821095808.png]]
+  ![[中科华创-装备智脑/周会/Appendix/Pasted image 20260821095808.png]]
 
 4.2 模型信息
 Qwen3.5模型结构相较于其余基于transformer模型有较大的不同，主要包含：Gated DeltaNet （GDN）是一个线性注意力机制，SwiGLU是一个前馈门控神经网络，Gated Attention传统注意力。KV-Cache保存内容的分析如下：
@@ -567,7 +567,7 @@ $$
 
 3. 第三优化点：算子融合，多个算子的寄存器复用
 	在线性注意力中开头的计算中需要进行6次线性层的矩阵乘运算，但是这些计算输入的是同一个张量tensor，此时可以将这6次的运算过程中同一个输入融合成一次输入或者进行寄存器驻留输入张量。同理，在门控前馈神经网络中也是一样的实现原理。
-![[中科华创-装备智脑/周会/Appendix/Pasted image 20260901112439.png]]
+	![[中科华创-装备智脑/周会/Appendix/Pasted image 20260901112439.png]]
 
 4. 第四优化点：算子加速
 	在计算矩阵乘过程中已经有相关的加速范式，通过内联汇编来手动集成AI加速指令集来实现利用AI算力中的寄存器和累加器资源。如果要底层实现加速实现，主要目标是实现矩阵元素乘的计算加速优化，原因是有大量的矩阵元素乘，通过相关AI指令和内联汇编，将矩阵元素乘放置到AI算力‘’NPU‘’中去计算。其次，就是优化修改原有的矩阵乘计算，但是这个原有就是通过AI指令集和内联汇编在AI算力中进行计算，修改优化难度较大。
