@@ -87,7 +87,17 @@ llama-quantize --allow-requantize \
 | pp128 | 27.62 | 27.81 |
 | tg128 | 4.69  | 4.99  |
 
+### 准确度
+
+{
+ accuracy num 69
+ accuracy ratio 43.125%
+ }
+
+
+
 # 2026-9-11
+
 ## 1、 成果对应：推进第二届全国RISC-V高水平创新及应用大赛
 
 ## 2、 进度对应
