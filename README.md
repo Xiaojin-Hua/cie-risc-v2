@@ -1,3 +1,7 @@
+说明：在用户态开启使用TCM：sudo -S chmod 666 /dev/tcm
+
+
+
 # 2026-9-16
 
 ## 优化1： IME MUL_MAT 按阶段选路（`ime.cpp`）
