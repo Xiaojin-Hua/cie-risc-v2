@@ -7,7 +7,7 @@
 |---|---|---|
 |优化后|**23.69**|**4.30**|
 |相对基线|**+9.7%**|**+1.9%**|
-## 优化2：SSM_CONV_STATE — 已实施并保留
+## 优化2：SSM_CONV_STATE
 
 热点循环里通过 `dst->nb[]`/`state->nb[]` 等**指针间接取 stride**，别名分析阻止了寄存器提升，编译器每轮重算地址。把这些 stride/data **提升为局部变量**后：
 
@@ -22,22 +22,22 @@
 ## 优化3：非必要算子的分析去除
 `delta-net-base.cpp` 的 `build_conv_state` 在喂给 `ggml_ssm_conv_state` 前做了 `transpose + ggml_cont`。而 conv 核是按张量 `nb[]` 步长读取的，**该 cont 对正确性并非必需**。
 
-|     | pp128            | tg128    | PPL    |
-| --- | ---------------- | -------- | ------ |
-| 现在  | **24.86**（+4.9%） | **4.31** | 3.6455 |
-| 基线  | 23.69            | 4.31     | 3.6455 |
+|     | pp128            | tg128    |
+| --- | ---------------- | -------- |
+| 现在  | **24.86**（+4.9%） | **4.31** |
+| 基线  | 23.69            | 4.31     |
 
 
 ## 优化4：在rvv_kernel.cpp中实现GDN，在ime.cpp中使用GDN
-对于线性状态空间建模的实现过程进行优化，从每次的一个token的多次计算，statexq、statexk以及状态更新等，其中statexq、statexk是矩阵乘；状态更新等计算多数是矩阵元素乘和乘加计算。对statexq、statexk的计算进行融合对state的访存次数为1次，对于矩阵元素乘使用RVV中的指令乘加计算。
+对于线性状态空间建模的实现过程进行优化，从每次的一个token的多次计算，包含state $\times$ q、state $\times$  k以及状态更新等，其中state $\times$ q、state $\times$  k是矩阵乘；状态更新等计算多数是矩阵元素乘和乘加计算。对state $\times$ q、state $\times$  k的计算进行融合对state的访存次数为1次，对于矩阵元素乘使用RVV中的指令乘加计算。
 
-|       | RISC-GDN      |
-| ----- | ------------- |
-| pp128 | 25.72 / 25.74 |
-| tg128 | 4.33 / 4.33   |
+|       | RISC-GDN |
+| ----- | -------- |
+| pp128 | 25.72    |
+| tg128 | 4.33     |
 
 
-## 优化5： 把 S_v² 状态的访存从每 token 一次降到每 chunk 一次，代价是每 token 多 ~3C·S_v 的 c×c 小矩阵算力
+## 优化5(最优版本)： 把 S_v² 状态的访存从每 token 一次降到每 chunk 一次，代价是每 token 多 ~3C·S_v 的 c×c 小矩阵算力
 
 按照chunk块大小扫描访存（pp128，基线 25.7）：C=1 25.23 | C=4 25.93 | **C=8 25.95** | C=16 25.76 | C=32 25.02 | C=64 24.52 | C=128 22.27。**小块才赢**——这跟"访存省 1/C、算力多 3C·S_v"的代数直觉相反，实测是额外算力而非访存主导。
 
@@ -78,15 +78,15 @@ llama-quantize --allow-requantize \
 
 - **4.5 bit 是 IME 的下限**（Q4_0/Q4_1/Q4_K 是仅有的 IME1 类型，Q4_0 的 B 块 288B 最小），所以这是这个方向能到的最小字节数。
 
-**2. 代码侧：循环状态 `get_rows` → 门控 view（真正的"融合"）** `build_rs` 原来用 `ggml_get_rows` 把 recurrent cache 整行拷成一个新张量，18 层×(SSM+conv)/token = 18 MiB 读 + 18 MiB 写，而它只被 GDN 消费。当只有一个 recurrent slot 时（实测 `n_rs=1, n_seqs=1, head=0`）这个拷贝毫无意义 → 改为 `ggml_view_2d` 直接指向 cache 行（门控 `n_rs==1 && n_seqs==1 && rs_head==0`，可用 `GGML_SPACEMIT_RS_VIEW=0` 关闭）。GDN kernel 本来就是先 `memcpy(s_out, s_in)` 再原地更新，读写别名到同一行是安全的。
+**2. 代码侧：循环状态 `get_rows` → 门控 view** `build_rs` 原来用 `ggml_get_rows` 把 recurrent cache 整行拷成一个新张量，18 层×(SSM+conv)/token = 18 MiB 读 + 18 MiB 写，而它只被 GDN 消费。当只有一个 recurrent slot 时（实测 `n_rs=1, n_seqs=1, head=0`）这个拷贝毫无意义 → 改为 `ggml_view_2d` 直接指向 cache 行（门控 `n_rs==1 && n_seqs==1 && rs_head==0`，可用 `GGML_SPACEMIT_RS_VIEW=0` 关闭）。GDN kernel 本来就是先 `memcpy(s_out, s_in)` 再原地更新，读写别名到同一行是安全的。
 
-- **正确性证据：view 开/关 PPL 逐位相同（3.7832）**，且原模型开 view 后仍是 **3.6309**（逐位一致）。
 - 实测 **tg128 +6.7%（4.67→4.98）**，decode 的 GET_ROWS 从 999,547 µs 掉到 **~2 ms（0.0%）**。
 
 |       | 量化    | 量化+融合 |
 | ----- | ----- | ----- |
 | pp128 | 27.62 | 27.81 |
 | tg128 | 4.69  | 4.99  |
+
 # 2026-9-11
 ## 1、 成果对应：推进第二届全国RISC-V高水平创新及应用大赛
 
