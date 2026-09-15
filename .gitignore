@@ -155,3 +155,5 @@ AGENTS.local.md
 .pi/SYSTEM.md
 
 *.zip
+# Builds inside the vendored llama.cpp tree (e.g. llama.cpp/build-k1)
+/llama.cpp/build*/

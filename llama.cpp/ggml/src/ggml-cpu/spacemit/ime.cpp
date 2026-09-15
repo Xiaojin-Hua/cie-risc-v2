@@ -410,7 +410,8 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
         static int mm_path = -2;
         if (mm_path == -2) {
             const char * e = getenv("GGML_SPACEMIT_MM_PATH");
-            mm_path = (e != NULL) ? (int) e[0] : 0;
+            // default = Path G (N-major) for prefill; set GGML_SPACEMIT_MM_PATH to override
+            mm_path = (e != NULL) ? (int) e[0] : 'g';
         }
         bool prefer_tcm = (gemm_m == 1);
         if (mm_path == 'b' || mm_path == 'B') {
@@ -466,6 +467,44 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 
                 gemm_kernel(b_blk_len, quant_a_buffer, b_col, b_zp, output + n_off,
                             /*count_m=*/1, NB_COLS, b_k_blks, gemm_n);
+            }
+        } else if ((mm_path == 'g' || mm_path == 'G') && gemm_m > 1 && gemm_n_stride == gemm_n &&
+                   tcm_buffer != nullptr &&
+                   spacemit_kernels::div_round_up(spacemit_kernels::div_round_up(gemm_m, row_align), nth) *
+                           per_mb_rows_wsize <=
+                       tcm_buffer_size) {
+            // Path G (N-major, ported from the other tree's 7732584 N-major commit):
+            // stage ALL of this thread's M4 chunks into its TCM quota once, then walk the N tiles
+            // outermost and the M chunks innermost, so one B tile serves every chunk back to back.
+            const int64_t g_chunks = spacemit_kernels::div_round_up(spacemit_kernels::div_round_up(gemm_m, row_align), nth);
+            {
+                int64_t chunk = 0;
+                for (int64_t m_start = ith * row_align; m_start < gemm_m; m_start += row_align * nth, chunk++) {
+                    const int64_t m_row_real = std::min(gemm_m - m_start, row_align);
+                    spacemit_kernels::rvv::memcpy1d(reinterpret_cast<uint8_t *>(tcm_buffer) + chunk * per_mb_rows_wsize,
+                                                    quant_a_buffer + m_start * row_stride_a,
+                                                    m_row_real * row_stride_a);
+                }
+            }
+            (void) g_chunks;
+            for (int64_t ni = 0; ni < gemm_n; ni += NB_COLS) {
+                const int64_t n_blk_real = std::min(gemm_n - ni, (int64_t) NB_COLS);
+                uint8_t *     b_col      = reinterpret_cast<uint8_t *>(w_data) + ni * row_stride_b;
+                uint8_t *     b_col_zp   = block_type_has_zp<BLOC_TYPE>() ? b_col : nullptr;
+                int64_t       chunk2     = 0;
+                for (int64_t m_start = ith * row_align; m_start < gemm_m; m_start += row_align * nth, chunk2++) {
+                    const int64_t m_row_real  = std::min(gemm_m - m_start, row_align);
+                    uint8_t *     a_row_ptr   = reinterpret_cast<uint8_t *>(tcm_buffer) + chunk2 * per_mb_rows_wsize;
+                    float *       c_blk       = output + m_start * gemm_n + ni;
+                    int32_t       rows_remaining = (int32_t) m_row_real;
+                    while (rows_remaining > 0) {
+                        auto rows_handled = gemm_kernel(b_blk_len, a_row_ptr, b_col, b_col_zp, c_blk, rows_remaining,
+                                                        n_blk_real, b_k_blks, gemm_n);
+                        c_blk += rows_handled * gemm_n;
+                        a_row_ptr += rows_handled * row_stride_a;
+                        rows_remaining -= rows_handled;
+                    }
+                }
             }
         } else if (prefer_tcm && gemm_n_stride == gemm_n && tcm_buffer != nullptr && per_mb_rows_wsize <= tcm_buffer_size) {
             for (int64_t m_start = ith * row_align; m_start < gemm_m; m_start += row_align * nth) {
@@ -1482,9 +1521,13 @@ static const ggml::cpu::tensor_traits * ggml_riscv64_spacemit_get_optimal_repack
 #endif
 
 #if defined(RISCV64_SPACEMIT_IME1)
-                if (cur->ne[1] % 16 == 0 && (ggml::cpu::riscv64_spacemit::global_spine_env_info.use_ime1)) {
-                    return &ggml::cpu::riscv64_spacemit::q8_0_16x32_q8_0;
-                }
+                // DISABLED 2026-09-15: the IME1 i8i8 M4 kernel (SQ8BitGemmM4Kernel_CompInt8_ScaleFp32_Impl)
+                // traps with SIGILL on this board's silicon (illegal vmadot encoding, exit 132) during
+                // prefill (m>1). q8_0 weights therefore fall back to the generic CPU kernel, which is
+                // what the README op-stats table records for q8_0 (cpu_generic).
+                // if (cur->ne[1] % 16 == 0 && (ggml::cpu::riscv64_spacemit::global_spine_env_info.use_ime1)) {
+                //     return &ggml::cpu::riscv64_spacemit::q8_0_16x32_q8_0;
+                // }
 #endif
             }
             break;
