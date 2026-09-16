@@ -86,6 +86,8 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> constexpr siz
         return sizeof(block_q8_0);
     } else if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0>) {
         return sizeof(block_q4_0) * INTER_SIZE / QK4_0;
+    } else if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0_k64>) {
+        return sizeof(block_q4_0_k64) * INTER_SIZE / QK4_0_K64;
     } else if constexpr (std::is_same_v<BLOC_TYPE, block_q4_1> || std::is_same_v<BLOC_TYPE, block_q4_K>) {
         return (sizeof(block_q4_0) + sizeof(uint8_t)) * INTER_SIZE / QK4_1;
     } else if constexpr (std::is_same_v<BLOC_TYPE, block_q2_K>) {
@@ -134,9 +136,9 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     if constexpr (std::is_same_v<BLOC_TYPE, block_q2_K> || std::is_same_v<BLOC_TYPE, block_q3_K>) {
                         size =
                             spacemit_kernels::div_round_up(src1_nelements, QK_K) * spacemit_kernels::q8k_blk_size(QK_K);
-                    } else if constexpr (INTER_SIZE == QK4_0) {
-                        size = spacemit_kernels::div_round_up(src1_nelements, QK4_0) *
-                               spacemit_kernels::q8_blk_size(QK4_0, true);
+                    } else if constexpr (INTER_SIZE == QK4_0 || INTER_SIZE == QK4_0_K64) {
+                        size = spacemit_kernels::div_round_up(src1_nelements, INTER_SIZE) *
+                               spacemit_kernels::q8_blk_size(INTER_SIZE, true);
                     } else if constexpr (INTER_SIZE == 256) {
                         size = spacemit_kernels::div_round_up(src1_nelements, 256) *
                                spacemit_kernels::q8_hp_blk_size(256, true, true);
@@ -155,9 +157,9 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     if constexpr (std::is_same_v<BLOC_TYPE, block_q2_K> || std::is_same_v<BLOC_TYPE, block_q3_K>) {
                         size =
                             spacemit_kernels::div_round_up(src1_nelements, QK_K) * spacemit_kernels::q8k_blk_size(QK_K);
-                    } else if constexpr (INTER_SIZE == QK4_0) {
-                        size = spacemit_kernels::div_round_up(src1_nelements, QK4_0) *
-                               spacemit_kernels::q8_blk_size(QK4_0, true);
+                    } else if constexpr (INTER_SIZE == QK4_0 || INTER_SIZE == QK4_0_K64) {
+                        size = spacemit_kernels::div_round_up(src1_nelements, INTER_SIZE) *
+                               spacemit_kernels::q8_blk_size(INTER_SIZE, true);
                     } else if constexpr (INTER_SIZE == 256) {
                         size = spacemit_kernels::div_round_up(src1_nelements, 256) *
                                spacemit_kernels::q8_hp_blk_size(256, true, true);
@@ -198,6 +200,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     case GGML_TYPE_Q5_0:
                     case GGML_TYPE_Q5_1:
                     case GGML_TYPE_Q5_K:
+                    case GGML_TYPE_Q4_0_K64:
                         //case GGML_TYPE_MXFP4:
                         forward_mul_mat(params, op);
                         return true;
@@ -218,6 +221,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     case GGML_TYPE_Q5_0:
                     case GGML_TYPE_Q5_1:
                     case GGML_TYPE_Q5_K:
+                    case GGML_TYPE_Q4_0_K64:
                         //case GGML_TYPE_MXFP4:
                         forward_mul_mat_id(params, op);
                         return true;
@@ -318,7 +322,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             quantize_a_4row_i8 = spacemit_kernels::ime1::quantize_a_4row_i8;
 
             if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0> || std::is_same_v<BLOC_TYPE, block_q4_1> ||
-                          std::is_same_v<BLOC_TYPE, block_q4_K>) {
+                          std::is_same_v<BLOC_TYPE, block_q4_K> || std::is_same_v<BLOC_TYPE, block_q4_0_k64>) {
                 gemm_kernel     = spacemit_kernels::ime1::gemm_kernel_i8i4;
                 set_kernel_impl = true;
             } else if constexpr (std::is_same_v<BLOC_TYPE, block_q8_0>) {
@@ -773,7 +777,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             quantize_a_row_i8 = spacemit_kernels::ime1::quantize_a_row_i8;
 
             if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0> || std::is_same_v<BLOC_TYPE, block_q4_1> ||
-                          std::is_same_v<BLOC_TYPE, block_q4_K>) {
+                          std::is_same_v<BLOC_TYPE, block_q4_K> || std::is_same_v<BLOC_TYPE, block_q4_0_k64>) {
                 gemm_kernel     = spacemit_kernels::ime1::gemm_kernel_i8i4;
                 set_kernel_impl = true;
             }
@@ -1405,6 +1409,7 @@ class tensor_traits_common : public tensor_traits_base {
 
 // Impl By IME1
 static const tensor_traits<block_q4_0, 32, 16>  q4_0_16x32_q8_0;
+static const tensor_traits<block_q4_0_k64, 64, 16> q4_0_k64_16x64_q8_0; // [Q4_0_K64] IME1, BlkLen=64
 static const tensor_traits<block_q4_1, 32, 16>  q4_1_16x32_q8_0;
 static const tensor_traits<block_q4_K, 32, 16>  q4_k_16x32_q8_0;
 // Impl By IME2
@@ -1463,6 +1468,16 @@ static const ggml::cpu::tensor_traits * ggml_riscv64_spacemit_get_optimal_repack
 #if defined(RISCV64_SPACEMIT_IME1)
                 if (cur->ne[1] % 16 == 0 && (ggml::cpu::riscv64_spacemit::global_spine_env_info.use_ime1)) {
                     return &ggml::cpu::riscv64_spacemit::q4_0_16x32_q8_0;
+                }
+#endif
+            }
+            break;
+        case GGML_TYPE_Q4_0_K64:
+            {
+#if defined(RISCV64_SPACEMIT_IME1)
+                if (cur->ne[1] % 16 == 0 && cur->ne[0] % 64 == 0 &&
+                    (ggml::cpu::riscv64_spacemit::global_spine_env_info.use_ime1)) {
+                    return &ggml::cpu::riscv64_spacemit::q4_0_k64_16x64_q8_0;
                 }
 #endif
             }

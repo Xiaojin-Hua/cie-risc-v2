@@ -154,7 +154,57 @@ void quantize_a_4row_i8(size_t BlkLen, const float * A, size_t CountK, uint8_t *
     }
 }
 
+// [Q4_0_K64] BlkLen-generic single-row A quantiser for the IME1 path.
+//
+// The vector routine below hard-codes BlkLen = 32 in its assembly (block
+// stride 36, 128-element tiles), so it produces a wrong A layout when called
+// with BlkLen = 64 -- which is what the gemm_m == 1 (decode) branch does.
+// This scalar version reproduces the assembly's arithmetic exactly:
+//   scale = amax * (1/127);  q = rne(a / scale);  saturate to int8
+// and writes the same per-block layout: [f32 scale][BlkLen int8], stride
+// 4 + BlkLen. Only reached for BlkLen != 32; the cost is O(K) against an
+// O(K*N) GEMM.
+static void quantize_a_row_i8_ref(size_t BlkLen, const float * A, size_t CountK, uint8_t * QuantA) {
+    const float  range_max_reciprocal = 1.0f / ((1 << 7) - 1);
+    const float  fone                 = 1.0f;
+    const size_t nblk                 = (CountK + BlkLen - 1) / BlkLen;
+
+    for (size_t b = 0; b < nblk; ++b) {
+        const size_t off = b * BlkLen;
+        const size_t n   = (off + BlkLen <= CountK) ? BlkLen : (CountK - off);
+
+        float amax = 0.0f;
+        for (size_t i = 0; i < n; ++i) {
+            const float v = fabsf(A[off + i]);
+            if (v > amax) {
+                amax = v;
+            }
+        }
+
+        const float scale = amax * range_max_reciprocal;
+        const float rep   = scale ? fone / scale : 0.0f;
+
+        uint8_t * dst = QuantA + b * (sizeof(float) + BlkLen);
+        memcpy(dst, &scale, sizeof(float));
+
+        int8_t * q = reinterpret_cast<int8_t *>(dst + sizeof(float));
+        for (size_t i = 0; i < n; ++i) {
+            long v = lrintf(A[off + i] * rep);
+            if (v >  127) { v =  127; }
+            if (v < -128) { v = -128; }
+            q[i] = static_cast<int8_t>(v);
+        }
+        for (size_t i = n; i < BlkLen; ++i) {
+            q[i] = 0;
+        }
+    }
+}
+
 void quantize_a_row_i8(size_t BlkLen, const float * A, size_t CountK, uint8_t * QuantA) {
+    if (BlkLen != 32) {
+        quantize_a_row_i8_ref(BlkLen, A, CountK, QuantA);
+        return;
+    }
     const float *   SRC                  = A;
     uint8_t *       DST                  = QuantA;
     constexpr float range_max_reciprocal = 1.0f / ((1 << 7) - 1);
