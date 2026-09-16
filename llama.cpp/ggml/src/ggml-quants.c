@@ -456,6 +456,67 @@ void dequantize_row_q2_0(const block_q2_0 * GGML_RESTRICT x, float * GGML_RESTRI
     }
 }
 
+// ---------------------------------------------------------------------------
+// [Q4_0_K64] same arithmetic as Q4_0 (d = -max/8, code = clamp(floor(x/d+8.5),0,15),
+// value = d*(code-8)); only the block width changes 32 -> 64.
+// ---------------------------------------------------------------------------
+void dequantize_row_q4_0_k64(const block_q4_0_k64 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
+    assert(k % QK4_0_K64 == 0);
+    const int64_t nb = k / QK4_0_K64;
+
+    for (int64_t i = 0; i < nb; i++) {
+        const float d = GGML_FP16_TO_FP32(x[i].d);
+
+        for (int64_t h = 0; h < 2; ++h) {
+            const uint8_t * qs = x[i].qs + h*(QK4_0_K64/4);
+            for (int64_t j = 0; j < QK4_0_K64/4; ++j) {
+                const int x0 = (qs[j] & 0x0F) - 8;
+                const int x1 = (qs[j] >>   4) - 8;
+
+                y[i*QK4_0_K64 + h*(QK4_0_K64/2) + j]                = x0*d;
+                y[i*QK4_0_K64 + h*(QK4_0_K64/2) + j + QK4_0_K64/4]  = x1*d;
+            }
+        }
+    }
+}
+
+void quantize_row_q4_0_k64_ref(const float * GGML_RESTRICT x, block_q4_0_k64 * GGML_RESTRICT y, int64_t k) {
+    assert(k % QK4_0_K64 == 0);
+    const int64_t nb = k / QK4_0_K64;
+
+    for (int64_t i = 0; i < nb; i++) {
+        float amax = 0.0f;
+        float max  = 0.0f;
+
+        for (int64_t j = 0; j < QK4_0_K64; j++) {
+            const float v = x[i*QK4_0_K64 + j];
+            if (amax < fabsf(v)) {
+                amax = fabsf(v);
+                max  = v;
+            }
+        }
+
+        const float d  = max / -8;
+        const float id = d ? 1.0f/d : 0.0f;
+
+        y[i].d = GGML_FP32_TO_FP16(d);
+
+        for (int64_t h = 0; h < 2; ++h) {
+            uint8_t * qs = y[i].qs + h*(QK4_0_K64/4);
+            for (int64_t j = 0; j < QK4_0_K64/4; ++j) {
+                const float x0 = x[i*QK4_0_K64 + h*(QK4_0_K64/2) + j]*id;
+                const float x1 = x[i*QK4_0_K64 + h*(QK4_0_K64/2) + j + QK4_0_K64/4]*id;
+
+                const uint8_t xi0 = MIN(15, (int8_t)(x0 + 8.5f));
+                const uint8_t xi1 = MIN(15, (int8_t)(x1 + 8.5f));
+
+                qs[j]  = xi0;
+                qs[j] |= xi1 << 4;
+            }
+        }
+    }
+}
+
 void dequantize_row_q4_0(const block_q4_0 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
     static const int qk = QK4_0;
 

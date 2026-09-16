@@ -198,6 +198,14 @@ typedef struct {
 } block_q4_0;
 static_assert(sizeof(block_q4_0) == sizeof(ggml_half) + QK4_0 / 2, "wrong q4_0 block size/padding");
 
+// [Q4_0_K64] one fp16 scale per 64 weights; two Q4_0-compatible 32-wide halves
+#define QK4_0_K64 64
+typedef struct {
+    ggml_half d;                     // delta
+    uint8_t qs[QK4_0_K64 / 2];       // nibbles: qs[0..15] = elems 0..31, qs[16..31] = elems 32..63
+} block_q4_0_k64;
+static_assert(sizeof(block_q4_0_k64) == sizeof(ggml_half) + QK4_0_K64 / 2, "wrong q4_0_k64 block size/padding");
+
 #define QK4_1 32
 typedef struct {
     GGML_EXTENSION union {

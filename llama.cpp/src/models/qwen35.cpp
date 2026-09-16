@@ -1,5 +1,8 @@
 #include "models.h"
+#include "llama-kv-cache.h"
 #include "llama-memory-recurrent.h"
+
+#include <cstdlib>
 
 void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,       hparams.f_norm_rms_eps);
@@ -152,8 +155,85 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
     ggml_tensor * inp_out_ids = build_inp_out_ids();
 
     // MTP/NextN layers are loaded as extra decoder blocks but not executed in the main pass.
+    const bool pop = std::getenv("LLAMA_QWEN35_POP") != nullptr &&
+                     ubatch.n_seqs == 1 && ubatch.equal_seqs() &&
+                     ubatch.n_seq_tokens == ubatch.n_tokens && ubatch.n_tokens > 1 &&
+                     params.gtype != LLM_GRAPH_TYPE_DECODER_MTP;
+    const int pop_skip_begin = n_layer * 2 / 3;
+
     for (int il = 0; il < n_layer; ++il) {
         res->t_layer_inp[il] = inpL;
+
+        const bool pop_attn_layer = pop && il >= pop_skip_begin && !hparams.is_recr(il);
+
+        if (pop_attn_layer) {
+            const int64_t n_prefix = n_tokens - 1;
+
+            ggml_tensor * cur_prefix = ggml_view_2d(ctx0, inpL,
+                    inpL->ne[0], n_prefix, inpL->nb[1], 0);
+            ggml_tensor * cur_last = ggml_view_2d(ctx0, inpL,
+                    inpL->ne[0], 1, inpL->nb[1], n_prefix * inpL->nb[1]);
+
+            ggml_tensor * pos_prefix = ggml_view_1d(ctx0, inp_pos,
+                    n_prefix * hparams.n_pos_per_embd(), 0);
+            ggml_tensor * pos_last = ggml_view_1d(ctx0, inp_pos,
+                    hparams.n_pos_per_embd(), n_prefix * inp_pos->nb[0]);
+
+            ggml_tensor * cur_prefix_norm = build_norm(cur_prefix,
+                    model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, il);
+            cb(cur_prefix_norm, "pop_attn_norm_prefix", il);
+
+            // The skipped path still fills this layer's KV cache for all prefix tokens.
+            ggml_tensor * prefix_kv = build_layer_attn_kv_only(
+                    inp->get_attn(), cur_prefix_norm, pos_prefix, sections, il);
+            GGML_UNUSED(prefix_kv);
+
+            // Reuse the normal attention builder for the boundary token, but point its
+            // input tensors at the final token and its one-column causal mask.
+            auto * attn = inp->get_attn();
+            ggml_tensor * old_k_idxs = attn->self_k_idxs;
+            ggml_tensor * old_v_idxs = attn->self_v_idxs;
+            ggml_tensor * old_mask   = attn->self_kq_mask_cnv;
+
+            attn->self_k_idxs = ggml_view_1d(ctx0, old_k_idxs, 1,
+                    n_prefix * old_k_idxs->nb[0]);
+
+            const int64_t v_per_token = old_v_idxs->ne[0] / n_tokens;
+            attn->self_v_idxs = ggml_view_1d(ctx0, old_v_idxs, v_per_token,
+                    n_prefix * v_per_token * ggml_element_size(old_v_idxs));
+
+            GGML_ASSERT(old_mask->ne[3] == 1);
+            attn->self_kq_mask_cnv = ggml_view_4d(ctx0, old_mask,
+                    old_mask->ne[0], 1, old_mask->ne[2], old_mask->ne[3],
+                    old_mask->nb[1], old_mask->nb[2], old_mask->nb[3],
+                    n_prefix * old_mask->nb[1]);
+
+            ggml_tensor * cur_last_norm = build_norm(cur_last,
+                    model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, il);
+            cb(cur_last_norm, "pop_attn_norm_last", il);
+
+            ggml_tensor * last_attn = build_layer_attn(
+                    attn, cur_last_norm, pos_last, sections, il);
+
+            attn->self_k_idxs = old_k_idxs;
+            attn->self_v_idxs = old_v_idxs;
+            attn->self_kq_mask_cnv = old_mask;
+
+            // The prefix is an identity layer. Only the boundary token continues
+            // through the full attention and FFN path below.
+            ggml_tensor * last_attn_residual = ggml_add(ctx0, last_attn, cur_last);
+            ggml_tensor * last_ffn_residual = last_attn_residual;
+            ggml_tensor * last_post_norm = build_norm(last_attn_residual,
+                    model.layers[il].attn_post_norm, nullptr,
+                    LLM_NORM_RMS, il);
+            ggml_tensor * last_ffn = build_layer_ffn(last_post_norm, il);
+            ggml_tensor * last_out = ggml_add(ctx0, last_ffn, last_ffn_residual);
+            last_out = build_cvec(last_out, il);
+
+            inpL = ggml_concat(ctx0, cur_prefix, last_out, 1);
+            cb(inpL, "pop_layer_out", il);
+            continue;
+        }
 
         ggml_tensor * inpSA = inpL;
 
@@ -259,6 +339,7 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
         int                       il) {
     const int64_t n_embd_head = hparams.n_embd_head_v();
     GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    const int64_t n_tokens_local = cur->ne[1];
 
     // Order: joint QG projection, QG split, Q norm, KV projection, K norm, RoPE, attention
 
@@ -272,7 +353,7 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
     cb(Kcur, "Kcur", il);
     cb(Vcur, "Vcur", il);
 
-    ggml_tensor * Qcur = ggml_view_3d(ctx0, Qcur_full, n_embd_head, n_head, n_tokens,
+    ggml_tensor * Qcur = ggml_view_3d(ctx0, Qcur_full, n_embd_head, n_head, n_tokens_local,
         ggml_element_size(Qcur_full) * n_embd_head * 2,
         ggml_element_size(Qcur_full) * n_embd_head * 2 * n_head, 0);
     cb(Qcur, "Qcur_reshaped", il);
@@ -282,18 +363,18 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
     cb(Qcur, "Qcur_normed", il);
 
     // Apply K normalization
-    Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
+    Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens_local);
     Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, nullptr, LLM_NORM_RMS, il);
     cb(Kcur, "Kcur_normed", il);
 
-    ggml_tensor * gate = ggml_view_3d(ctx0, Qcur_full, n_embd_head, n_head, n_tokens,
+    ggml_tensor * gate = ggml_view_3d(ctx0, Qcur_full, n_embd_head, n_head, n_tokens_local,
         ggml_element_size(Qcur_full) * n_embd_head * 2,
         ggml_element_size(Qcur_full) * n_embd_head * 2 * n_head,
         ggml_element_size(Qcur_full) * n_embd_head);
-    gate = ggml_cont_2d(ctx0, gate, n_embd_head * n_head, n_tokens);
+    gate = ggml_cont_2d(ctx0, gate, n_embd_head * n_head, n_tokens_local);
     cb(gate, "gate_reshaped", il);
 
-    Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+    Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens_local);
 
     // Apply MRoPE
     Qcur = ggml_rope_multi(
@@ -329,6 +410,40 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
     cur = build_lora_mm(model.layers[il].wo, cur, model.layers[il].wo_s);
     cb(cur, "attn_output", il);
 
+    return cur;
+}
+
+ggml_tensor * llama_model_qwen35::graph::build_layer_attn_kv_only(
+        llm_graph_input_attn_kv * inp,
+        ggml_tensor *             cur,
+        ggml_tensor *             inp_pos,
+        int *                     sections,
+        int                       il) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+    const int64_t n_tokens_local = cur->ne[1];
+
+    ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur, model.layers[il].wk_s);
+    ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur, model.layers[il].wv_s);
+
+    Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens_local);
+    Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, nullptr, LLM_NORM_RMS, il);
+    Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens_local);
+
+    Kcur = ggml_rope_multi(ctx0, Kcur, inp_pos, nullptr,
+            n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+            ext_factor, attn_factor, beta_fast, beta_slow);
+
+    const auto * mctx_cur = inp->mctx;
+    ggml_tensor * k_idxs = ggml_view_1d(ctx0, inp->self_k_idxs, n_tokens_local, 0);
+    const int64_t v_per_token = inp->self_v_idxs->ne[0] / n_tokens;
+    ggml_tensor * v_idxs = ggml_view_1d(ctx0, inp->self_v_idxs,
+            v_per_token * n_tokens_local, 0);
+
+    ggml_build_forward_expand(gf, mctx_cur->cpy_k(ctx0, Kcur, k_idxs, il));
+    ggml_build_forward_expand(gf, mctx_cur->cpy_v(ctx0, Vcur, v_idxs, il));
+
+    cb(Kcur, "pop_k_only", il);
+    cb(Vcur, "pop_v_only", il);
     return cur;
 }
 

@@ -222,6 +222,48 @@ void ggml_vec_dot_q2_0_q8_0_generic(int n, float * GGML_RESTRICT s, size_t bs, c
     *s = sumf;
 }
 
+// ---------------------------------------------------------------------------
+// [Q4_0_K64] generic-path fallback. Each 64-wide block is two 32-wide Q4_0 halves
+// sharing one scale, so it can be handed straight to the (RVV) Q4_0 dot product.
+// The SpacemiT IME1 repack normally supersedes this.
+// ---------------------------------------------------------------------------
+void quantize_row_q4_0_k64(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
+    quantize_row_q4_0_k64_ref(x, (block_q4_0_k64 *) y, k);
+}
+
+void ggml_vec_dot_q4_0_k64_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
+    const int qk = QK4_0_K64;
+    const int nb = n / qk;
+
+    assert(n % qk == 0);
+    assert(nrc == 1);
+    UNUSED(nrc); UNUSED(bx); UNUSED(by); UNUSED(bs);
+
+    const block_q4_0_k64 * GGML_RESTRICT x = vx;
+    const block_q8_0     * GGML_RESTRICT y = vy;
+
+    enum { CH = 16 };
+    block_q4_0 tmp[2*CH];
+    float sumf = 0;
+
+    for (int ib = 0; ib < nb; ib += CH) {
+        const int c = (nb - ib < CH) ? (nb - ib) : CH;
+
+        for (int t = 0; t < c; ++t) {
+            tmp[2*t + 0].d = x[ib + t].d;
+            tmp[2*t + 1].d = x[ib + t].d;
+            memcpy(tmp[2*t + 0].qs, x[ib + t].qs,      16);
+            memcpy(tmp[2*t + 1].qs, x[ib + t].qs + 16, 16);
+        }
+
+        float part = 0.0f;
+        ggml_vec_dot_q4_0_q8_0(c*qk, &part, 0, tmp, 0, y + 2*ib, 0, 1);
+        sumf += part;
+    }
+
+    *s = sumf;
+}
+
 void ggml_vec_dot_q4_0_q8_0_generic(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
     const int qk = QK8_0;
     const int nb = n / qk;
