@@ -563,14 +563,14 @@ namespace {
     "vmv.v.v      v31, v30                \n\t"
 
 #define SQ4BIT_KERNEL_COMP_4x16x16              \
-    "vmadotsu   v16, v10, v2            \n\t" \
-    "vmadotsu   v18, v10, v3            \n\t" \
-    "vmadotsu   v20, v10, v4            \n\t" \
-    "vmadotsu   v22, v10, v5            \n\t" \
-    "vmadotsu   v16, v11, v6            \n\t" \
-    "vmadotsu   v18, v11, v7            \n\t" \
-    "vmadotsu   v20, v11, v8            \n\t" \
-    "vmadotsu   v22, v11, v9            \n\t"
+    "vmadot       v16, v10, v2            \n\t" \
+    "vmadot       v18, v10, v3            \n\t" \
+    "vmadot       v20, v10, v4            \n\t" \
+    "vmadot       v22, v10, v5            \n\t" \
+    "vmadot       v16, v11, v6            \n\t" \
+    "vmadot       v18, v11, v7            \n\t" \
+    "vmadot       v20, v11, v8            \n\t" \
+    "vmadot       v22, v11, v9            \n\t"
 
 #define SAVE_RESULT_4x16                        \
     "addi         a1, %[C], 0             \n\t" \
@@ -753,13 +753,13 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
                 "addi               t3, %[BlockCountK], 0       \n\t"
                 "addi               a1, %[A], 0                 \n\t"
                 "addi               s1, %[B], 0                 \n\t"
+                "vsetvli            t0, zero, e32, m8           \n\t"
                 "BLOCK_COUNTK_LOOP%=:                           \n\t"
                 "addi               s5, s1, 0                   \n\t"
                 "addi               s1, s5, 32                  \n\t"
                 "addi               s2, s1, 32                  \n\t"
                 "addi               s3, s1, 32*2                \n\t"
                 "addi               s4, s1, 32*3                \n\t"
-                "vsetvli            t0, zero, e32, m8           \n\t"
                 "vxor.vv            v16, v16, v16               \n\t"
                 // load a scale
                 "flw                f1, (a1)                    \n\t"
@@ -772,11 +772,18 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
 
                 LOAD_B_16x8x2
 
-                "vsetvli            t0, zero, e8, m1            \n\t"
                 "vle8.v             v10, (a1)                   \n\t"
                 "addi               a1, a1, 32                  \n\t"
                 "vle8.v             v11, (a1)                   \n\t"
                 "addi               a1, a1, 32                  \n\t"
+                "vadd.vi            v2, v2, -8                  \n\t"
+                "vadd.vi            v3, v3, -8                  \n\t"
+                "vadd.vi            v4, v4, -8                  \n\t"
+                "vadd.vi            v5, v5, -8                  \n\t"
+                "vadd.vi            v6, v6, -8                  \n\t"
+                "vadd.vi            v7, v7, -8                  \n\t"
+                "vadd.vi            v8, v8, -8                  \n\t"
+                "vadd.vi            v9, v9, -8                  \n\t"
 
                 SQ4BIT_KERNEL_COMP_4x16x16
 
