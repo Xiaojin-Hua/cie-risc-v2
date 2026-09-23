@@ -414,8 +414,11 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
         static int mm_path = -2;
         if (mm_path == -2) {
             const char * e = getenv("GGML_SPACEMIT_MM_PATH");
-            // default = Path G (N-major) for prefill; set GGML_SPACEMIT_MM_PATH to override
-            mm_path = (e != NULL) ? (int) e[0] : 'g';
+            // default = Path F (weight-stationary, one B n-tile staged in TCM and every m row
+            // streamed through it) for prefill: measured +7.2% pp512 over Path G on
+            // Qwen3.5-2B/Q4_0_K64 (3/3 interleaved rounds).  When its slab precondition fails the
+            // chain falls through to the generic path.  Set GGML_SPACEMIT_MM_PATH to override.
+            mm_path = (e != NULL) ? (int) e[0] : 'f';
         }
         bool prefer_tcm = (gemm_m == 1);
         if (mm_path == 'b' || mm_path == 'B') {
