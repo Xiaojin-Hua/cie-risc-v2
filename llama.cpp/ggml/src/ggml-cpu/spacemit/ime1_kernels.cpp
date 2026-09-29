@@ -548,6 +548,56 @@ namespace {
     "vfmul.vf     v13, v13, f4, v0.t      \n\t" \
     "vfmul.vf     v15, v15, f4, v0.t      \n\t"
 
+// [Q4_0_K128 / scale-build] Drop-in replacement for LOAD_SCALE_4x16_FP16.
+//
+// The original writes the A row scales with 8 masked `vfmul.vf` plus 4 `vmv.v.v`
+// copies (44 instructions).  Here the two merged A-scale vectors are prebuilt once
+// (v2 = [As0 x4 | As1 x4], v3 = [As2 x4 | As3 x4]) and the combined scale becomes
+// 8 unmasked `vfmul.vv`, which is 32 instructions for the same maths.
+//
+// Equivalence: with vle16 mf4 (4 halfwords) the low half of stage 2 is the 4 row
+// scales and the lane-4..7 half is self, so vfwcvt gives v4=[Bs0..3 | Bs0..3],
+// v5=[Bs4..7 | Bs4..7], and so on.  The vmadot 4x4 sub-tile for rows r..r+3 is pair
+// (r/4), so v16..v23 need scales {As0,As2} for pair 0 and {As1,As3} for pair 1 --
+// exactly what v2/v3 place in lanes 0..3 / 4..7.  Hence v8..v15 are bit-identical
+// to the original and the kernel output is unchanged.
+// Clobbers v0, v2..v15 and s2,s3,s4,s6 -- all of which the original macro already
+// clobbers, and every s-register here is recomputed at the top of each n-tile pass.
+#define LOAD_SCALE_4x16_FP16_OPT                \
+    "addi         s2, s5, -8              \n\t" \
+    "addi         s3, s5, 8               \n\t" \
+    "addi         s4, s5, 16              \n\t" \
+    "addi         s6, s5, 24              \n\t" \
+    "li           t1, 0xf0                \n\t" \
+    "vmv.s.x      v0, t1                  \n\t" \
+    "vsetvli      t0, zero, e16, mf4      \n\t" \
+    "vle16.v      v9, (s5)                \n\t" \
+    "vle16.v      v11, (s3)               \n\t" \
+    "vle16.v      v13, (s4)               \n\t" \
+    "vle16.v      v15, (s6)               \n\t" \
+    "vsetvli      t0, zero, e16, mf2      \n\t" \
+    "vle16.v      v9, (s2), v0.t          \n\t" \
+    "vle16.v      v11, (s5), v0.t         \n\t" \
+    "vle16.v      v13, (s3), v0.t         \n\t" \
+    "vle16.v      v15, (s4), v0.t         \n\t" \
+    "vfwcvt.f.f.v v4, v9                  \n\t" \
+    "vfwcvt.f.f.v v5, v11                 \n\t" \
+    "vfwcvt.f.f.v v6, v13                 \n\t" \
+    "vfwcvt.f.f.v v7, v15                 \n\t" \
+    "vsetvli      t0, zero, e32, m1       \n\t" \
+    "vfmv.v.f     v2, f1                  \n\t" \
+    "vfmerge.vfm  v2, v2, f2, v0          \n\t" \
+    "vfmv.v.f     v3, f3                  \n\t" \
+    "vfmerge.vfm  v3, v3, f4, v0          \n\t" \
+    "vfmul.vv     v8, v4, v2              \n\t" \
+    "vfmul.vv     v9, v4, v3              \n\t" \
+    "vfmul.vv     v10, v5, v2             \n\t" \
+    "vfmul.vv     v11, v5, v3             \n\t" \
+    "vfmul.vv     v12, v6, v2             \n\t" \
+    "vfmul.vv     v13, v6, v3             \n\t" \
+    "vfmul.vv     v14, v7, v2             \n\t" \
+    "vfmul.vv     v15, v7, v3             \n\t"
+
 // [s2|s5, s3, s4, s6]
 #define LOAD_SCALE_4x16                         \
     "addi         s2, s5, -16             \n\t" \
@@ -768,7 +818,7 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
                 "addi               t2, t2, -1                  \n\t"
                 "bnez               t2, BLOCK_INNER_LOOP%=      \n\t"
 
-                LOAD_SCALE_4x16_FP16
+                LOAD_SCALE_4x16_FP16_OPT
 
                 "vsetvli            t0, zero, e32, m8           \n\t"
                 "vfcvt.f.x.v        v16, v16                    \n\t"
@@ -841,7 +891,7 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
                 "addi               t2, t2, -1                  \n\t"
                 "bnez               t2, BLOCK_INNER_LOOP%=      \n\t"
 
-                LOAD_SCALE_4x16_FP16
+                LOAD_SCALE_4x16_FP16_OPT
 
                 "vsetvli            t0, zero, e32, m8           \n\t"
                 "vfcvt.f.x.v        v16, v16                    \n\t"
