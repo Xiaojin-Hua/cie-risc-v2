@@ -94,7 +94,58 @@ namespace spacemit_kernels {
     "vse8.v             v31, (s1)                \n\t"
 
 namespace ime1 {
+// [Q4_0_K128] BlkLen=128 activation quantiser for the IME1 M4 path.
+//
+// The vectorised BlkLen=64 routine above cannot form a 128-wide amax (e32/m8 caps VL at
+// 64), so this variant takes the max over two 64-lane passes and then quantises in
+// 8-value groups, which matches the payload layout the kernel reads:
+//   per 128-value block and 4-row group: [4 x f32 scales][512 B payload];
+//   payload group g (8 values per row) sits at 16 + 32g, row r at +8r.
+// Arithmetic mirrors the assembly exactly: scale = amax * (1/127); q = rne(a/scale)
+// with a real division by the scale; saturating narrowing to int8.
+static void quantize_a_4row_i8_k128(const float * GGML_RESTRICT A, size_t CountK, uint8_t * GGML_RESTRICT QuantA) {
+    constexpr size_t  BlkLen                = 128;
+    constexpr float   range_max_reciprocal  = 1.0f / ((1 << 7) - 1);
+
+    GGML_ASSERT(CountK % BlkLen == 0);
+    const size_t nblk = CountK / BlkLen;
+
+    for (size_t b = 0; b < nblk; ++b) {
+        uint8_t * dst = QuantA + b * 4 * (sizeof(float) + BlkLen);
+
+        for (int r = 0; r < 4; ++r) {
+            const float * src = A + r * CountK + b * BlkLen;
+
+            const vfloat32m8_t v0 = __riscv_vle32_v_f32m8(src,      64);
+            const vfloat32m8_t v1 = __riscv_vle32_v_f32m8(src + 64, 64);
+            const vfloat32m8_t vm = __riscv_vfmax_vv_f32m8(__riscv_vfabs_v_f32m8(v0, 64),
+                                                           __riscv_vfabs_v_f32m8(v1, 64), 64);
+            const vfloat32m1_t red =
+                __riscv_vfredmax_vs_f32m8_f32m1(vm, __riscv_vfmv_s_f_f32m1(0.0f, 1), 64);
+            const float amax = __riscv_vfmv_f_s_f32m1_f32(red);
+
+            const float scale = amax * range_max_reciprocal;
+            const float inv   = scale != 0.0f ? 1.0f / scale : 0.0f;
+            memcpy(dst + r * sizeof(float), &scale, sizeof(float));
+
+            uint8_t * out = dst + 16 + 8 * r;
+            for (size_t g = 0; g < BlkLen / 8; ++g) {
+                const vfloat32m1_t v = __riscv_vle32_v_f32m1(src + g * 8, 8);
+                const vfloat32m1_t q = __riscv_vfmul_vf_f32m1(v, inv, 8);
+                const vint32m1_t   i = __riscv_vfcvt_x_f_v_i32m1(q, 8);
+                const vint16mf2_t  h = __riscv_vnclip_wx_i16mf2(i, 0, 0, 8);
+                const vint8mf4_t   c = __riscv_vnclip_wx_i8mf4(h, 0, 0, 8);
+                __riscv_vse8_v_i8mf4((int8_t *) (out + 32 * g), c, 8);
+            }
+        }
+    }
+}
+
 void quantize_a_4row_i8(size_t BlkLen, const float * A, size_t CountK, uint8_t * QuantA) {
+    if (BlkLen == 128) { // QK4_0_K128
+        quantize_a_4row_i8_k128(A, CountK, QuantA);
+        return;
+    }
     constexpr float range_max_reciprocal = 1.0f / ((1 << 7) - 1);
     const float     fone                 = 1.0f;
 

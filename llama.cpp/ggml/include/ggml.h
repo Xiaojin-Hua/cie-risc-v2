@@ -431,7 +431,8 @@ extern "C" {
         GGML_TYPE_Q1_0    = 41,
         GGML_TYPE_Q2_0    = 42,
         GGML_TYPE_Q4_0_K64 = 43, // [Q4_0_K64] Q4_0 with 64-element blocks
-        GGML_TYPE_COUNT   = 44,
+        GGML_TYPE_Q4_0_K128 = 44, // [Q4_0_K128] Q4_0 with 128-element blocks (half the scales)
+        GGML_TYPE_COUNT   = 45,
     };
 
     // [TAG_GGML_PREC]
