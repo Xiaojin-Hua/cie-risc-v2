@@ -5,6 +5,129 @@
 
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
+#include <string>
+#include <utility>
+#include <vector>
+
+// ---------------------------------------------------------------------------
+// Encoder structural pruning (round 2026-10-06).
+//
+// Three independent, env-gated switches.  All of them only ever touch layers
+// strictly below the CED split point; the decoder half must keep every layer
+// or the tail replay has nothing to run.  With none of them set the graph is
+// byte-identical to the unpruned build, which is what keeps the TAIL=512 gate
+// green.
+//
+//   LLAMA_QWEN35_ENC_SKIP="3,7,11"   layer becomes identity
+//                                    (residual stream passes straight through)
+//   LLAMA_QWEN35_ENC_NOFFN="5,9"     token mixer kept, FFN sub-block dropped
+//   LLAMA_QWEN35_ENC_PFFN="0,..."    token mixer on the whole window, FFN only
+//                                    on the trailing ced_tail tokens
+//                                    ("CED for the encoder"; needs CED active)
+// ---------------------------------------------------------------------------
+namespace {
+
+const std::vector<int> & enc_list(const char * name) {
+    // reserve so emplace_back never reallocates: callers hold the returned
+    // reference across the range-for that immediately follows.
+    static std::vector<std::pair<const char *, std::vector<int>>> cache;
+    cache.reserve(8);
+    for (const auto & kv : cache) {
+        if (std::strcmp(kv.first, name) == 0) {
+            return kv.second;
+        }
+    }
+    std::vector<int> out;
+    const char * e = std::getenv(name);
+    if (e != nullptr && e[0] != '\0') {
+        const char * p = e;
+        while (*p != '\0') {
+            char * end = nullptr;
+            const long id = std::strtol(p, &end, 10);
+            if (end == p) {
+                break;
+            }
+            if (id >= 0 && id < 4096) {
+                out.push_back((int) id);
+            }
+            p = end;
+            while (*p == ',' || *p == ' ' || *p == '\t') {
+                ++p;
+            }
+        }
+        std::fprintf(stderr, "ENC_PRUNE: %s='%s' -> %zu layer(s)\n", name, e, out.size());
+    }
+    cache.emplace_back(name, std::move(out));
+    return cache.back().second;
+}
+
+bool enc_in(const char * name, int il) {
+    for (int x : enc_list(name)) {
+        if (x == il) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool enc_skip_requested (int il) { return enc_in("LLAMA_QWEN35_ENC_SKIP",  il); }
+bool enc_noffn_requested(int il) { return enc_in("LLAMA_QWEN35_ENC_NOFFN", il); }
+bool enc_pffn_requested (int il) { return enc_in("LLAMA_QWEN35_ENC_PFFN",  il); }
+
+std::string enc_summary(int split) {
+    static const char * names[3] = { "LLAMA_QWEN35_ENC_SKIP",
+                                     "LLAMA_QWEN35_ENC_NOFFN",
+                                     "LLAMA_QWEN35_ENC_PFFN" };
+    static const char * tags[3]  = { "skip", "noffn", "pffn" };
+    std::string out = "ENC_PRUNE applied:";
+    for (int k = 0; k < 3; ++k) {
+        std::string lst;
+        for (int x : enc_list(names[k])) {
+            if (x < split) {
+                if (!lst.empty()) {
+                    lst += ",";
+                }
+                lst += std::to_string(x);
+            }
+        }
+        out += " ";
+        out += tags[k];
+        out += "=[";
+        out += lst;
+        out += "]";
+    }
+    return out;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// CED split point.
+//
+// The runtime has always derived it as n_layer*2/3, which on this 24-layer
+// model is 16 -- so the encoder half is layers 0..15 and h_pref is H_15.  The
+// projection blobs shipped so far were trained with --split-layer 14 (input
+// H_13), which makes their layer-15 entry dead code.  This override lets the
+// trained-for-14 configuration actually be run, so the two can be compared
+// instead of assumed equal.
+// ---------------------------------------------------------------------------
+static int ced_split_of(int n_layer) {
+    int s = n_layer * 2 / 3;
+    if (const char * e = std::getenv("LLAMA_QWEN35_CED_SPLIT")) {
+        const int v = std::atoi(e);
+        if (v > 0 && v < n_layer) {
+            s = v;
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                std::fprintf(stderr, "CED: split overridden to %d (default %d)\n",
+                             v, n_layer * 2 / 3);
+            }
+        }
+    }
+    return s;
+}
 
 void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,       hparams.f_norm_rms_eps);
@@ -168,7 +291,7 @@ ggml_tensor * llama_model_qwen35::graph::build_ced_decoder(
         const llama_ced_ctx &     ced) {
     const int64_t n_prefix        = i0;
     const int64_t n_embd_head     = hparams.n_embd_head_v();
-    const int     ced_split_local = n_layer * 2 / 3;
+    const int     ced_split_local = ced_split_of(n_layer);
     ggml_tensor * cur = ggml_view_2d(ctx0, inpL, inpL->ne[0], n_win, inpL->nb[1],
                                      (size_t) i0 * inpL->nb[1]);
     ggml_tensor * pos = ggml_view_1d(ctx0, inp_pos,
@@ -301,7 +424,7 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
                      ubatch.n_seq_tokens == ubatch.n_tokens && ubatch.n_tokens > 1 &&
                      !pop &&
                      params.gtype != LLM_GRAPH_TYPE_DECODER_MTP;
-    const int ced_split = n_layer * 2 / 3;
+    const int ced_split = ced_split_of(n_layer);
     int ced_tail = n_tokens;
     if (ced) {
         if (const char * e = std::getenv("LLAMA_QWEN35_CED_TAIL")) {
@@ -340,8 +463,31 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
     }
     const int ced_npref = ced ? n_tokens - ced_tail_eff : n_tokens;
 
+    // ---- one-time banner so a run's configuration is never in doubt --------
+    {
+        // Only the prefill graph is interesting: llama.cpp builds a 1-token
+        // decode graph first, where ced is inactive by construction.
+        static bool reported = false;
+        if (!reported && n_tokens > 1) {
+            reported = true;
+            const std::string sum = enc_summary(ced_split);
+            std::fprintf(stderr,
+                    "ENC_PRUNE: n_layer=%d ced_split=%d n_tokens=%d ced=%d tail=%d n_prefix=%d | %s\n",
+                    n_layer, ced_split, n_tokens, (int) ced, ced_tail_eff, ced_npref,
+                    sum.c_str());
+        }
+    }
+
     for (int il = 0; il < n_layer; ++il) {
         res->t_layer_inp[il] = inpL;
+
+        // ---- encoder structural pruning: identity layer -------------------
+        // Skipping an encoder layer leaves the residual stream untouched, so
+        // the graph stays exactly as wide as before; only the compute goes.
+        if (il < ced_split && enc_skip_requested(il)) {
+            cb(inpL, "enc_skipped", il);
+            continue;
+        }
 
         const bool pop_attn_layer = pop && il >= pop_skip_begin && !hparams.is_recr(il);
 
@@ -471,16 +617,50 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         // Save the tensor before post-attention norm for residual connection
         ggml_tensor * ffn_residual = cur;
 
-        // Post-attention norm
-        ggml_tensor * attn_post_norm = build_norm(cur, model.layers[il].attn_post_norm, nullptr, LLM_NORM_RMS, il);
-        cb(attn_post_norm, "attn_post_norm", il);
+        // ---- encoder structural pruning: drop the FFN sub-block -----------
+        // The token mixer has already run and its residual is in place, so
+        // skipping the FFN is exactly "residual passes through this half of
+        // the layer".  build_cvec still runs, keeping the tail of the loop
+        // identical to the unpruned path.
+        const bool drop_ffn = il < ced_split && enc_noffn_requested(il);
 
-        // Dense FFN layer - without residual connection
-        cur = build_layer_ffn(attn_post_norm, il);
-        cb(cur, "ffn_out", il);
+        // ---- prefix-FFN skip: "CED for the encoder" -----------------------
+        // The token mixer still runs on every token -- that is what keeps the
+        // recurrent state chain intact -- but the FFN sub-block only runs on
+        // the trailing `ced_tail_eff` tokens.  Prefix tokens therefore reach
+        // the split point through a shallower FFN path; the CED projection is
+        // retrained to read whatever that path produces.  Same recombine
+        // pattern as the decoder split above.
+        const bool pffn = !drop_ffn && ced && ced_npref > 0 &&
+                          il < ced_split && enc_pffn_requested(il);
 
-        // Residual connection for FFN - add to the tensor from before post_attention_layernorm
-        cur = ggml_add(ctx0, cur, ffn_residual);
+        if (drop_ffn) {
+            cb(cur, "enc_noffn_skip", il);
+        } else if (pffn) {
+            ggml_tensor * pre_w = ggml_view_2d(ctx0, cur, cur->ne[0], ced_npref,
+                                               cur->nb[1], 0);
+            ggml_tensor * win_w = ggml_view_2d(ctx0, cur, cur->ne[0], ced_tail_eff,
+                                               cur->nb[1], (size_t) ced_npref * cur->nb[1]);
+            ggml_tensor * win_norm = build_norm(win_w, model.layers[il].attn_post_norm,
+                                                nullptr, LLM_NORM_RMS, il);
+            cb(win_norm, "enc_pffn_norm", il);
+            ggml_tensor * win_ffn = build_layer_ffn(win_norm, il);
+            cb(win_ffn, "enc_pffn_ffn", il);
+            ggml_tensor * win_out = ggml_add(ctx0, win_ffn, win_w);
+            cur = ggml_concat(ctx0, pre_w, win_out, 1);
+            cb(cur, "enc_pffn_out", il);
+        } else {
+            // Post-attention norm
+            ggml_tensor * attn_post_norm = build_norm(cur, model.layers[il].attn_post_norm, nullptr, LLM_NORM_RMS, il);
+            cb(attn_post_norm, "attn_post_norm", il);
+
+            // Dense FFN layer - without residual connection
+            cur = build_layer_ffn(attn_post_norm, il);
+            cb(cur, "ffn_out", il);
+
+            // Residual connection for FFN - add to the tensor from before post_attention_layernorm
+            cur = ggml_add(ctx0, cur, ffn_residual);
+        }
         cb(cur, "post_ffn", il);
 
         cur = build_cvec(cur, il);
