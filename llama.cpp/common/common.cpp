@@ -215,6 +215,15 @@ int32_t common_cpu_get_num_math() {
             }
         }
     }
+#elif defined(__riscv) && defined(__linux__)
+    // SpacemiT X60: 8 cores, 4 of them accelerated.  Defaulting to all 8 costs
+    // ~30% of prefill throughput, so schedule onto the accelerated subset only.
+    {
+        const int n_math = ggml_cpu_get_num_math_cores();
+        if (n_math > 0) {
+            return n_math;
+        }
+    }
 #elif defined(__powerpc64__) || defined(__powerpc__)
     int32_t smt_factor = 1;
     int phy_cpus = common_cpu_get_num_physical_cores();

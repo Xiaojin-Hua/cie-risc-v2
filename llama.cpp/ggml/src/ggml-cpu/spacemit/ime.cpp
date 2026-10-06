@@ -1927,6 +1927,10 @@ static int bind_ai_thread() {
     return 0;
 }
 
+int ggml_backend_cpu_riscv64_spacemit_num_perfer_cores(void) {
+    return ggml::cpu::riscv64_spacemit::global_spine_env_info.num_perfer_cores;
+}
+
 void ggml_backend_cpu_riscv64_spacemit_set_numa_thread_affinity(int thread_n) {
     int cpu_id = sched_getcpu();
     if (ggml::cpu::riscv64_spacemit::global_spine_env_info.use_ime2 &&
@@ -1941,7 +1945,19 @@ void ggml_backend_cpu_riscv64_spacemit_set_numa_thread_affinity(int thread_n) {
         pthread_t    main_thread     = pthread_self();
         const auto & perfer_core_ids = ggml::cpu::riscv64_spacemit::global_spine_env_info.perfer_core_ids;
         if (thread_n < 0 || static_cast<size_t>(thread_n) >= perfer_core_ids.size()) {
-            GGML_ABORT("thread_n %d exceeds perfer_core_ids size %zu\n", thread_n, perfer_core_ids.size());
+            // This board exposes 8 cores but only 4 *preferred* ones, and the
+            // default worker count is the core count. Aborting here killed the
+            // process before a single token -- `llama-bench` with no -t died.
+            // Extra threads just run unpinned and without a TCM buffer; the
+            // preferred cores are still pinned, which is where the win is.
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                GGML_LOG_WARN("%s: thread_n %d >= perfer_core_ids size %zu; "
+                              "extra threads run unpinned (no TCM)\n",
+                              __func__, thread_n, perfer_core_ids.size());
+            }
+            return;
         }
         auto perfer_cpu_id = perfer_core_ids[static_cast<size_t>(thread_n)];
         CPU_SET(perfer_cpu_id, &(ggml::cpu::riscv64_spacemit::tls_context.cpuset));
