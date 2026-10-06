@@ -431,8 +431,8 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
     // encoder half runs on every token; decoder half runs only on the trailing
     // `ced_tail` tokens. With ced_tail == n_tokens this must reproduce the stock
     // path bit-for-bit (that is the correctness gate).
-    // CED is ON by default (see llama-ced.h); LLAMA_QWEN35_CED=off makes the
-    // projection table inactive, which is what selects the stock path here.
+    // CED is driven entirely by LLAMA_QWEN35_CED (the blob path); when it is
+    // unset/off the projection table is inactive and this is the stock path.
     const bool ced = ced_proj_table(&model).active &&
                      ubatch.n_seqs == 1 && ubatch.equal_seqs() &&
                      ubatch.n_seq_tokens == ubatch.n_tokens && ubatch.n_tokens > 1 &&

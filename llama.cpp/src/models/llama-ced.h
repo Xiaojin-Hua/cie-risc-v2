@@ -79,15 +79,20 @@ llama_ced_ctx llama_ced_load(const char * path,
 
 // The tuned configuration is the DEFAULT; LLAMA_QWEN35_CED is an override:
 //
-//   unset / ""    -> the shipped best blob (see LLAMA_CED_DEFAULT_BLOB)
-//   off | none|0  -> inactive: stock llama.cpp, no CED at all
+// The blob is a deployment artifact, so its path is the one thing that has to
+// come from the environment.  Everything else has a sane default, so pointing
+// at a blob is all you have to say:
+//
+//   unset / ""    -> inactive: stock llama.cpp (a one-line hint is printed)
+//   off | none|0  -> inactive, no hint (for scripts and baselines)
 //   zero          -> active but with projection disabled (zero-prefix control)
 //   1             -> legacy bare switch (the older ridge blob)
-//   <path>        -> that blob
+//   <path>        -> that blob, with LLAMA_CED_DEFAULT_TAIL and the shipped
+//                    encoder-skip default (see qwen35.cpp)
 //
 // Any problem (missing file, bad magic, dimension mismatch) leaves the ctx
 // INACTIVE so the model runs stock -- a broken blob must never be fatal.
-#define LLAMA_CED_DEFAULT_BLOB "/home/bianbu/k64-precision/models/ced_proj_vB.bin"
+#define LLAMA_CED_SHIPPED_BLOB "/home/bianbu/k64-precision/models/ced_proj_vB.bin"
 #define LLAMA_CED_DEFAULT_TAIL 128
 
 llama_ced_ctx llama_ced_load_from_env(uint32_t n_layer,

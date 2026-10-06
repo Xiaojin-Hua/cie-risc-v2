@@ -216,36 +216,34 @@ llama_ced_ctx llama_ced_load_from_env(uint32_t n_layer, uint32_t n_embd,
     llama_ced_ctx ced;   // inactive
 
     const char * env = std::getenv("LLAMA_QWEN35_CED");
-
-    // The tuned configuration is the default; the variable is an override.
-    if (env != nullptr && env[0] != '\0') {
-        if (std::strcmp(env, "off") == 0 || std::strcmp(env, "none") == 0 ||
-            std::strcmp(env, "0") == 0) {
-            std::fprintf(stderr, "CED: LLAMA_QWEN35_CED=%s -> stock llama.cpp\n", env);
-            return ced;              // inactive => the graph takes the stock path
-        }
-        if (std::strcmp(env, "zero") == 0) {
-            // CED split enabled but the prefix K/V left at zero: the control arm.
-            ced.active = true;
-            ced.split_layer = 0;     // 0 => llama_ced_project always declines
-            ced.tail = 0;
-            ced.layer_ids.clear();
-            std::fprintf(stderr, "CED: LLAMA_QWEN35_CED=zero -> CED split with a "
-                                 "zero prefix (projection disabled)\n");
-            return ced;
-        }
+    if (env == nullptr || env[0] == '\0') {
+        // No blob named: stock.  Say it once, because on this board the stock
+        // path is ~27% slower than the tuned one and silence reads as "fine".
+        std::fprintf(stderr, "CED: LLAMA_QWEN35_CED not set -> stock path "
+                             "(set it to '%s' for the tuned configuration)\n",
+                     LLAMA_CED_SHIPPED_BLOB);
+        return ced;                  // inactive => the graph takes the stock path
+    }
+    if (std::strcmp(env, "off") == 0 || std::strcmp(env, "none") == 0 ||
+        std::strcmp(env, "0") == 0) {
+        std::fprintf(stderr, "CED: LLAMA_QWEN35_CED=%s -> stock llama.cpp\n", env);
+        return ced;
+    }
+    if (std::strcmp(env, "zero") == 0) {
+        // CED split enabled but the prefix K/V left at zero: the control arm.
+        ced.active = true;
+        ced.split_layer = 0;         // 0 => llama_ced_project always declines
+        ced.tail = 0;
+        ced.layer_ids.clear();
+        std::fprintf(stderr, "CED: LLAMA_QWEN35_CED=zero -> CED split with a "
+                             "zero prefix (projection disabled)\n");
+        return ced;
     }
 
-    const char * path = LLAMA_CED_DEFAULT_BLOB;
-    if (env != nullptr && env[0] != '\0') {
-        path = env;
-        if (std::strcmp(env, "1") == 0) {
-            // legacy: stage 1 used LLAMA_QWEN35_CED=1 as a bare switch
-            path = "/home/bianbu/k64-precision/models/ced_proj.bin";
-        }
-    } else {
-        std::fprintf(stderr, "CED: no LLAMA_QWEN35_CED set -> default '%s' "
-                             "(set LLAMA_QWEN35_CED=off for stock)\n", path);
+    const char * path = env;
+    if (std::strcmp(env, "1") == 0) {
+        // legacy: stage 1 used LLAMA_QWEN35_CED=1 as a bare switch
+        path = "/home/bianbu/k64-precision/models/ced_proj.bin";
     }
 
     ced = llama_ced_load(path, buft);
