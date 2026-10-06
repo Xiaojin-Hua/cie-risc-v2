@@ -13,12 +13,16 @@
 #include "llama-sampler.h"
 #include "llama.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 //
 // llama_context
@@ -123,6 +127,29 @@ llama_context::llama_context(
 
     // +1: id n_layer() taps the output of the last layer ("input" of the head)
     cparams.embeddings_layer_inp.resize(hparams.n_layer() + 1, false);
+
+    // CED dump probe: enable the requested layer-input slots so that
+    // llm_graph_result::prepare() marks them with ggml_set_output() and the
+    // allocator keeps their buffers alive until we read them.  Without this the
+    // reads alias recycled memory (slot 0 and slot 8 came back identical).
+    if (const char * dump_path = std::getenv("LLAMA_QWEN35_CED_DUMP_H15")) {
+        const char * want = std::getenv("LLAMA_QWEN35_CED_DUMP_LAYER");
+        const std::string want_s = want != nullptr ? want : "16";
+        size_t pos = 0;
+        while (pos < want_s.size()) {
+            size_t comma = want_s.find(',', pos);
+            if (comma == std::string::npos) {
+                comma = want_s.size();
+            }
+            const int slot = std::atoi(want_s.substr(pos, comma - pos).c_str());
+            pos = comma + 1;
+            if (slot >= 0 && slot < (int) cparams.embeddings_layer_inp.size()) {
+                cparams.embeddings_layer_inp[slot] = true;
+                LLAMA_LOG_INFO("%s: CED dump enabled for layer-input slot %d -> %s\n",
+                               __func__, slot, dump_path);
+            }
+        }
+    }
     embd_layer_inp.resize(hparams.n_layer() + 1);
 
     cparams.ctx_type          = params.ctx_type;
@@ -1946,6 +1973,50 @@ int llama_context::decode(const llama_batch & batch_inp) {
         }
 
         extract_layer_inputs(res, n_tokens_prev, ubatch.n_tokens);
+
+        // ---- CED dump probe: write the extracted layer-input buffers ---------
+        // extract_layer_inputs() has just copied them out of the graph, so these
+        // buffers are valid and correct (the tensors were marked with
+        // ggml_set_output at prepare time).
+        if (const char * dump_path = std::getenv("LLAMA_QWEN35_CED_DUMP_H15")) {
+            if (ubatch.n_tokens > 1) {
+                const char * want = std::getenv("LLAMA_QWEN35_CED_DUMP_LAYER");
+                const std::string want_s = want != nullptr ? want : "16";
+                static FILE * dump_f = std::fopen(dump_path, "wb");
+                if (dump_f != nullptr) {
+                    size_t pos = 0;
+                    while (pos < want_s.size()) {
+                        size_t comma = want_s.find(',', pos);
+                        if (comma == std::string::npos) {
+                            comma = want_s.size();
+                        }
+                        const int slot = std::atoi(want_s.substr(pos, comma - pos).c_str());
+                        pos = comma + 1;
+                        if (slot < 0 || slot >= (int) embd_layer_inp.size()) {
+                            continue;
+                        }
+                        if (!embd_layer_inp[slot].has_data()) {
+                            continue;
+                        }
+                        ggml_tensor * t = res->get_layer_inp(slot);
+                        const size_t nb = t != nullptr
+                            ? std::min((size_t) n_embd * ubatch.n_tokens * sizeof(float), ggml_nbytes(t))
+                            : 0;
+                        if (nb == 0) continue;
+                        const int32_t hdr[6] = { slot,
+                                                 t != nullptr ? (int32_t) t->ne[0] : 0,
+                                                 t != nullptr ? (int32_t) t->ne[1] : 0,
+                                                 t != nullptr ? (int32_t) t->ne[2] : 0,
+                                                 (int32_t) ubatch.n_tokens, 0 };
+                        std::fwrite(hdr, sizeof(hdr), 1, dump_f);
+                        std::fwrite(embd_layer_inp[slot].data, 1, nb, dump_f);
+                        std::fflush(dump_f);
+                        LLAMA_LOG_INFO("%s: CED dump slot=%d rows=%d %zu bytes\n",
+                                       __func__, slot, (int) ubatch.n_tokens, nb);
+                    }
+                }
+            }
+        }
 
         // extract nextn embeddings before
         // only meaningful in LLAMA_POOLING_TYPE_NONE (per-token); other pooling modes are ignored.

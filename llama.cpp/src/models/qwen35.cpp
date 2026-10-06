@@ -340,12 +340,21 @@ ggml_tensor * llama_model_qwen35::graph::build_ced_decoder(
             if (!llama_ced_project(ced, (uint32_t) il, ctx0, h_pref, &kp, &vp)) {
                 continue;   // uncalibrated layer: keep the stage-1 behaviour
             }
-            // the projection is a linear map off the layer-13 hidden state, so K
-            // still needs k_norm and RoPE at the PREFIX's absolute positions
+            // the projection is a linear map off the layer-15 hidden state, so K
+            // still needs k_norm and RoPE at the PREFIX's absolute positions.
+            //
+            // This norm is NOT redundant even though the training target was the
+            // reference model's k_norm OUTPUT: dropping it measured PPL 23.8138
+            // against 18.9211 with it (2026-10-06 A/B), i.e. the renormalisation
+            // repairs a scale/shape error in the ridge solution rather than
+            // adding one.  LLAMA_QWEN35_CED_SKIP_KNORM=1 is kept for the record.
+            static const bool skip_knorm = std::getenv("LLAMA_QWEN35_CED_SKIP_KNORM") != nullptr;
             ggml_tensor * k_3d = ggml_cont_3d(ctx0, kp, n_embd_head, n_head_kv, n_prefix);
             ggml_tensor * v_3d = ggml_cont_3d(ctx0, vp, n_embd_head, n_head_kv, n_prefix);
-            k_3d = build_norm(k_3d, model.layers[il].attn_k_norm, nullptr,
-                              LLM_NORM_RMS, il);
+            if (!skip_knorm) {
+                k_3d = build_norm(k_3d, model.layers[il].attn_k_norm, nullptr,
+                                  LLM_NORM_RMS, il);
+            }
             k_3d = ggml_rope_multi(ctx0, k_3d, pref_pos, nullptr,
                     n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
                     ext_factor, attn_factor, beta_fast, beta_slow);
@@ -776,6 +785,13 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
     Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, nullptr, LLM_NORM_RMS, il);
     cb(Kcur, "Kcur_normed", il);
 
+    // CED dump probe: stash the true post-k_norm K of the decoder full-attention
+    // layers so the prefix projection can be fitted against BOARD targets.
+    if (std::getenv("LLAMA_QWEN35_CED_DUMP_KV") != nullptr) {
+        if (il == 19) { res->t_layer_inp[17] = Kcur; }
+        if (il == 23) { res->t_layer_inp[19] = Kcur; }
+    }
+
     ggml_tensor * gate = ggml_view_3d(ctx0, Qcur_full, n_embd_head, n_head, n_tokens_local,
         ggml_element_size(Qcur_full) * n_embd_head * 2,
         ggml_element_size(Qcur_full) * n_embd_head * 2 * n_head,
@@ -784,6 +800,12 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
     cb(gate, "gate_reshaped", il);
 
     Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens_local);
+
+    // CED dump probe: stash the true v_proj output (the CED path stores vp as-is).
+    if (std::getenv("LLAMA_QWEN35_CED_DUMP_KV") != nullptr) {
+        if (il == 19) { res->t_layer_inp[18] = Vcur; }
+        if (il == 23) { res->t_layer_inp[21] = Vcur; }
+    }
 
     // Apply MRoPE
     Qcur = ggml_rope_multi(
