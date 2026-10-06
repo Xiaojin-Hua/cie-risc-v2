@@ -80,6 +80,11 @@ llama_ced_ctx llama_ced_load(const char * path, ggml_backend_buffer_type * buft)
     const uint32_t hidden   = rd_u32(hdr + 12);
     const uint32_t kv_dim   = rd_u32(hdr + 16);
     const uint32_t split    = rd_u32(hdr + 20);
+    // NOTE: the blob carries a `tail` field, but the exporter writes
+    // max(--eval-tails) into it (see tools/ced_train_kvproj.py), i.e. the
+    // largest tail it was *evaluated* at -- 512 for every shipped blob, which
+    // means "skip nothing".  It is therefore NOT usable as the runtime default;
+    // the deployed window is LLAMA_CED_DEFAULT_TAIL, overridable per run.
     const uint32_t tail     = rd_u32(hdr + 24);
 
     if (n_cal == 0 || n_cal > CED_MAX_LAYERS || hidden == 0 || kv_dim == 0) {
@@ -211,25 +216,36 @@ llama_ced_ctx llama_ced_load_from_env(uint32_t n_layer, uint32_t n_embd,
     llama_ced_ctx ced;   // inactive
 
     const char * env = std::getenv("LLAMA_QWEN35_CED");
-    if (env == nullptr || env[0] == '\0') {
-        return ced;      // feature not requested: no filesystem access at all
+
+    // The tuned configuration is the default; the variable is an override.
+    if (env != nullptr && env[0] != '\0') {
+        if (std::strcmp(env, "off") == 0 || std::strcmp(env, "none") == 0 ||
+            std::strcmp(env, "0") == 0) {
+            std::fprintf(stderr, "CED: LLAMA_QWEN35_CED=%s -> stock llama.cpp\n", env);
+            return ced;              // inactive => the graph takes the stock path
+        }
+        if (std::strcmp(env, "zero") == 0) {
+            // CED split enabled but the prefix K/V left at zero: the control arm.
+            ced.active = true;
+            ced.split_layer = 0;     // 0 => llama_ced_project always declines
+            ced.tail = 0;
+            ced.layer_ids.clear();
+            std::fprintf(stderr, "CED: LLAMA_QWEN35_CED=zero -> CED split with a "
+                                 "zero prefix (projection disabled)\n");
+            return ced;
+        }
     }
-    if (std::strcmp(env, "0") == 0 || std::strcmp(env, "off") == 0) {
-        // explicit "stage-1 behaviour": enable the CED split but leave the prefix
-        // K/V untouched (zeros). Needed as the zero control when the default
-        // path exists on disk.
-        ced.active = true;
-        ced.split_layer = 0;      // 0 => llama_ced_project/dl always decline
-        ced.tail = 0;
-        ced.layer_ids.clear();
-        std::fprintf(stderr, "CED: LLAMA_QWEN35_CED=%s -> projection disabled "
-                             "(stage-1 zero-prefix behaviour)\n", env);
-        return ced;
-    }
-    const char * path = env;
-    if (std::strcmp(env, "1") == 0) {
-        // convenience: stage 1 used LLAMA_QWEN35_CED=1 as a bare switch
-        path = "/home/bianbu/k64-precision/models/ced_proj.bin";
+
+    const char * path = LLAMA_CED_DEFAULT_BLOB;
+    if (env != nullptr && env[0] != '\0') {
+        path = env;
+        if (std::strcmp(env, "1") == 0) {
+            // legacy: stage 1 used LLAMA_QWEN35_CED=1 as a bare switch
+            path = "/home/bianbu/k64-precision/models/ced_proj.bin";
+        }
+    } else {
+        std::fprintf(stderr, "CED: no LLAMA_QWEN35_CED set -> default '%s' "
+                             "(set LLAMA_QWEN35_CED=off for stock)\n", path);
     }
 
     ced = llama_ced_load(path, buft);

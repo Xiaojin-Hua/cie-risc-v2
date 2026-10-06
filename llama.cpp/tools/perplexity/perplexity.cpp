@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <mutex>
@@ -19,6 +20,26 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+
+// CED emits logits only for a trailing window, so the scored range has to be
+// derived from that window unless the operator pinned it. Values mirror
+// src/models/llama-ced.h + src/models/qwen35.cpp.
+static int ced_default_ppl_first(const common_params & params, int n_ctx) {
+    const char * cen = std::getenv("LLAMA_QWEN35_CED");
+    if (cen != nullptr && (strcmp(cen, "off") == 0 || strcmp(cen, "none") == 0 ||
+                           strcmp(cen, "0") == 0)) {
+        return n_ctx/2;                       // stock path: historical default
+    }
+    const char * te = std::getenv("LLAMA_QWEN35_CED_TAIL");
+    const int tail = te != nullptr ? atoi(te) : 128;   // LLAMA_CED_DEFAULT_TAIL
+    if (tail <= 0 || tail >= n_ctx) {
+        return n_ctx/2;                       // full window: nothing was skipped
+    }
+    LOG_WRN("CED active with tail=%d and no --ppl-first: scoring [%d, %d) "
+            "instead of the historical [%d, %d)\n", tail, n_ctx - tail, n_ctx, n_ctx/2, n_ctx);
+    return n_ctx - tail;
+}
+
 
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
@@ -539,10 +560,11 @@ static results_perplexity perplexity(llama_context * ctx, const common_params & 
     // Example, we have a context window of 512, we will compute perplexity for each of the
     // last 256 tokens.  Then, we split the input up into context window size chunks to
     // process the entire prompt.
-    // Default keeps the historical n_ctx/2. A graph that only emits a trailing
-    // window of logits (e.g. CED with a short tail) must override this, or the
-    // scored range includes positions whose logits were never computed.
-    const int first = params.ppl_first >= 0 ? params.ppl_first : n_ctx/2;
+    // Default keeps the historical n_ctx/2, unless the graph only emits a
+    // trailing window (CED): then it is derived so the scored range can never
+    // include positions whose logits were never computed.
+    const int first = params.ppl_first >= 0 ? params.ppl_first
+                                            : ced_default_ppl_first(params, n_ctx);
 
     for (int i = 0; i < n_chunk; i += n_seq) {
         const int start =     i * n_ctx;
@@ -1792,10 +1814,11 @@ static void kl_divergence(llama_context * ctx, const common_params & params) {
     auto    kld_ptr =    kld_values.data();
     auto p_diff_ptr = p_diff_values.data();
 
-    // Default keeps the historical n_ctx/2. A graph that only emits a trailing
-    // window of logits (e.g. CED with a short tail) must override this, or the
-    // scored range includes positions whose logits were never computed.
-    const int first = params.ppl_first >= 0 ? params.ppl_first : n_ctx/2;
+    // Default keeps the historical n_ctx/2, unless the graph only emits a
+    // trailing window (CED): then it is derived so the scored range can never
+    // include positions whose logits were never computed.
+    const int first = params.ppl_first >= 0 ? params.ppl_first
+                                            : ced_default_ppl_first(params, n_ctx);
 
     for (int i = 0; i < n_chunk; i += n_seq) {
         const int start =     i * n_ctx;

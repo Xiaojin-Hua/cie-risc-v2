@@ -28,19 +28,28 @@
 // ---------------------------------------------------------------------------
 namespace {
 
-const std::vector<int> & enc_list(const char * name) {
+// The shipped best configuration: drop encoder layer 9.  Applied as a DEFAULT
+// (only while CED is active); LLAMA_QWEN35_ENC_SKIP overrides it, and the
+// literal values off/none/- disable it.
+static const int ENC_SKIP_DEFAULT = 9;
+
+const std::vector<int> & enc_list(const char * name, int default_id) {
     // reserve so emplace_back never reallocates: callers hold the returned
     // reference across the range-for that immediately follows.
-    static std::vector<std::pair<const char *, std::vector<int>>> cache;
+    static std::vector<std::pair<std::string, std::vector<int>>> cache;
     cache.reserve(8);
+    const std::string key = std::string(name) + "#" + std::to_string(default_id);
     for (const auto & kv : cache) {
-        if (std::strcmp(kv.first, name) == 0) {
+        if (kv.first == key) {
             return kv.second;
         }
     }
     std::vector<int> out;
     const char * e = std::getenv(name);
-    if (e != nullptr && e[0] != '\0') {
+    if (e != nullptr && e[0] != '\0' &&
+        (std::strcmp(e, "off") == 0 || std::strcmp(e, "none") == 0 || std::strcmp(e, "-") == 0)) {
+        std::fprintf(stderr, "ENC_PRUNE: %s=%s -> disabled\n", name, e);
+    } else if (e != nullptr && e[0] != '\0') {
         const char * p = e;
         while (*p != '\0') {
             char * end = nullptr;
@@ -57,13 +66,16 @@ const std::vector<int> & enc_list(const char * name) {
             }
         }
         std::fprintf(stderr, "ENC_PRUNE: %s='%s' -> %zu layer(s)\n", name, e, out.size());
+    } else if (default_id >= 0) {
+        out.push_back(default_id);
+        std::fprintf(stderr, "ENC_PRUNE: %s unset -> default {%d}\n", name, default_id);
     }
-    cache.emplace_back(name, std::move(out));
+    cache.emplace_back(key, std::move(out));
     return cache.back().second;
 }
 
-bool enc_in(const char * name, int il) {
-    for (int x : enc_list(name)) {
+bool enc_in(const char * name, int il, int default_id) {
+    for (int x : enc_list(name, default_id)) {
         if (x == il) {
             return true;
         }
@@ -71,11 +83,11 @@ bool enc_in(const char * name, int il) {
     return false;
 }
 
-bool enc_skip_requested (int il) { return enc_in("LLAMA_QWEN35_ENC_SKIP",  il); }
-bool enc_noffn_requested(int il) { return enc_in("LLAMA_QWEN35_ENC_NOFFN", il); }
-bool enc_pffn_requested (int il) { return enc_in("LLAMA_QWEN35_ENC_PFFN",  il); }
+bool enc_skip_requested (int il, int def) { return enc_in("LLAMA_QWEN35_ENC_SKIP",  il, def); }
+bool enc_noffn_requested(int il, int def) { return enc_in("LLAMA_QWEN35_ENC_NOFFN", il, def); }
+bool enc_pffn_requested (int il, int def) { return enc_in("LLAMA_QWEN35_ENC_PFFN",  il, def); }
 
-std::string enc_summary(int split) {
+std::string enc_summary(int split, int skip_def) {
     static const char * names[3] = { "LLAMA_QWEN35_ENC_SKIP",
                                      "LLAMA_QWEN35_ENC_NOFFN",
                                      "LLAMA_QWEN35_ENC_PFFN" };
@@ -83,7 +95,7 @@ std::string enc_summary(int split) {
     std::string out = "ENC_PRUNE applied:";
     for (int k = 0; k < 3; ++k) {
         std::string lst;
-        for (int x : enc_list(names[k])) {
+        for (int x : enc_list(names[k], k == 0 ? skip_def : -1)) {
             if (x < split) {
                 if (!lst.empty()) {
                     lst += ",";
@@ -419,18 +431,25 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
     // encoder half runs on every token; decoder half runs only on the trailing
     // `ced_tail` tokens. With ced_tail == n_tokens this must reproduce the stock
     // path bit-for-bit (that is the correctness gate).
-    const bool ced = std::getenv("LLAMA_QWEN35_CED") != nullptr &&
+    // CED is ON by default (see llama-ced.h); LLAMA_QWEN35_CED=off makes the
+    // projection table inactive, which is what selects the stock path here.
+    const bool ced = ced_proj_table(&model).active &&
                      ubatch.n_seqs == 1 && ubatch.equal_seqs() &&
                      ubatch.n_seq_tokens == ubatch.n_tokens && ubatch.n_tokens > 1 &&
                      !pop &&
                      params.gtype != LLM_GRAPH_TYPE_DECODER_MTP;
     const int ced_split = ced_split_of(n_layer);
+    // pruning only defaults on while CED is active, so LLAMA_QWEN35_CED=off is
+    // genuinely stock; an explicit ENC_* list still applies either way.
+    const int enc_skip_def = ced ? ENC_SKIP_DEFAULT : -1;
+
     int ced_tail = n_tokens;
     if (ced) {
+        ced_tail = LLAMA_CED_DEFAULT_TAIL;
         if (const char * e = std::getenv("LLAMA_QWEN35_CED_TAIL")) {
-            ced_tail = atoi(e);
+            const int t = atoi(e);
+            ced_tail = t >= 1 ? t : n_tokens;   // 0 / junk => full window
         }
-        if (ced_tail < 1)          ced_tail = 1;
         if (ced_tail > n_tokens)   ced_tail = n_tokens;
     }
     // ---- CED window vs. downstream scoring range -------------------------
@@ -470,11 +489,13 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         static bool reported = false;
         if (!reported && n_tokens > 1) {
             reported = true;
-            const std::string sum = enc_summary(ced_split);
+            const std::string sum = enc_summary(ced_split, enc_skip_def);
             std::fprintf(stderr,
                     "ENC_PRUNE: n_layer=%d ced_split=%d n_tokens=%d ced=%d tail=%d n_prefix=%d | %s\n",
                     n_layer, ced_split, n_tokens, (int) ced, ced_tail_eff, ced_npref,
                     sum.c_str());
+            std::fprintf(stderr, "ENC_PRUNE: using tail=%d (default %d), encoder skip default %d\n",
+                         ced_tail_eff, LLAMA_CED_DEFAULT_TAIL, enc_skip_def);
         }
     }
 
@@ -484,7 +505,7 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         // ---- encoder structural pruning: identity layer -------------------
         // Skipping an encoder layer leaves the residual stream untouched, so
         // the graph stays exactly as wide as before; only the compute goes.
-        if (il < ced_split && enc_skip_requested(il)) {
+        if (il < ced_split && enc_skip_requested(il, enc_skip_def)) {
             cb(inpL, "enc_skipped", il);
             continue;
         }
@@ -622,7 +643,7 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         // skipping the FFN is exactly "residual passes through this half of
         // the layer".  build_cvec still runs, keeping the tail of the loop
         // identical to the unpruned path.
-        const bool drop_ffn = il < ced_split && enc_noffn_requested(il);
+        const bool drop_ffn = il < ced_split && enc_noffn_requested(il, -1);
 
         // ---- prefix-FFN skip: "CED for the encoder" -----------------------
         // The token mixer still runs on every token -- that is what keeps the
@@ -632,7 +653,7 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         // retrained to read whatever that path produces.  Same recombine
         // pattern as the decoder split above.
         const bool pffn = !drop_ffn && ced && ced_npref > 0 &&
-                          il < ced_split && enc_pffn_requested(il);
+                          il < ced_split && enc_pffn_requested(il, -1);
 
         if (drop_ffn) {
             cb(cur, "enc_noffn_skip", il);

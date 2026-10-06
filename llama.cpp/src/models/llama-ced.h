@@ -77,8 +77,19 @@ struct llama_ced_ctx {
 llama_ced_ctx llama_ced_load(const char * path,
                              ggml_backend_buffer_type * buft = nullptr);
 
-// Same, but the path comes from LLAMA_QWEN35_CED (unset/empty => inert, no
-// filesystem access). Validates the blob against the model dimensions.
+// The tuned configuration is the DEFAULT; LLAMA_QWEN35_CED is an override:
+//
+//   unset / ""    -> the shipped best blob (see LLAMA_CED_DEFAULT_BLOB)
+//   off | none|0  -> inactive: stock llama.cpp, no CED at all
+//   zero          -> active but with projection disabled (zero-prefix control)
+//   1             -> legacy bare switch (the older ridge blob)
+//   <path>        -> that blob
+//
+// Any problem (missing file, bad magic, dimension mismatch) leaves the ctx
+// INACTIVE so the model runs stock -- a broken blob must never be fatal.
+#define LLAMA_CED_DEFAULT_BLOB "/home/bianbu/k64-precision/models/ced_proj_vB.bin"
+#define LLAMA_CED_DEFAULT_TAIL 128
+
 llama_ced_ctx llama_ced_load_from_env(uint32_t n_layer,
                                       uint32_t n_embd,
                                       uint32_t n_embd_k,
