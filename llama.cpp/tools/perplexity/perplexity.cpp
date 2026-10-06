@@ -26,8 +26,14 @@
 // src/models/llama-ced.h + src/models/qwen35.cpp.
 static int ced_default_ppl_first(const common_params & params, int n_ctx) {
     const char * cen = std::getenv("LLAMA_QWEN35_CED");
-    if (cen != nullptr && (strcmp(cen, "off") == 0 || strcmp(cen, "none") == 0 ||
-                           strcmp(cen, "0") == 0)) {
+    // CED is only active when the variable names a blob. Unset / off / none / 0
+    // all mean the stock path, which computes every position -- so the
+    // historical n_ctx/2 range is the right default there, and narrowing it
+    // would silently report a different (much lower) number.
+    const bool ced_on = cen != nullptr && cen[0] != '\0' &&
+                        strcmp(cen, "off") != 0 && strcmp(cen, "none") != 0 &&
+                        strcmp(cen, "0") != 0;
+    if (!ced_on) {
         return n_ctx/2;                       // stock path: historical default
     }
     const char * te = std::getenv("LLAMA_QWEN35_CED_TAIL");
