@@ -2525,6 +2525,15 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_PERPLEXITY}));
     add_opt(common_arg(
+        {"--ppl-first"}, "N",
+        string_format("first position scored by perplexity (default: %d = n_ctx/2); "
+                      "use n_ctx-window when the graph only emits a trailing window of logits",
+                      params.ppl_first),
+        [](common_params & params, int value) {
+            params.ppl_first = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_PERPLEXITY}));
+    add_opt(common_arg(
         {"--ppl-output-type"}, "<0|1>",
         string_format("output type for perplexity calculation (default: %d)", params.ppl_output_type),
         [](common_params & params, int value) {

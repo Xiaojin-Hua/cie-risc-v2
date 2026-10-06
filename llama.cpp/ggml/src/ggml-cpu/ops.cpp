@@ -2,6 +2,7 @@
 
 #include "ggml-cpu.h"
 #include "ggml-impl.h"
+#include "ggml-quants.h"
 #include "binary-ops.h"
 #include "simd-gemm.h"
 #include "ggml.h"
@@ -10,6 +11,8 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 
 // ggml_compute_forward_dup
@@ -8907,6 +8910,41 @@ static void ggml_compute_forward_flash_attn_ext_f16_one_chunk(
     }
 }
 
+
+// --- KV dequantisation for quantized KV caches on the tiled FA path ----------
+// Reads one KV row of `n` elements of `type` from `src` and writes it to
+// dst[i * dst_stride].  dst_stride == 1 -> row-major, dst_stride == KV_TILE_SZ
+// -> the transposed K layout used by the tiled path.
+static inline void ggml_fa_dequant_row(float * dst, int64_t dst_stride, const char * src,
+                                       int64_t n, ggml_type type) {
+    if (type == GGML_TYPE_Q8_0) {
+        const block_q8_0 * b = (const block_q8_0 *) src;
+        for (int64_t d = 0; d < n; d += QK8_0) {
+            const float s = GGML_CPU_FP16_TO_FP32(b->d);
+            for (int j = 0; j < QK8_0; ++j) {
+                dst[(d + j) * dst_stride] = s * (float) b->qs[j];
+            }
+            ++b;
+        }
+    } else if (type == GGML_TYPE_Q4_0) {
+        const block_q4_0 * b = (const block_q4_0 *) src;
+        for (int64_t d = 0; d < n; d += QK4_0) {
+            const float s = GGML_CPU_FP16_TO_FP32(b->d);
+            for (int j = 0; j < QK4_0 / 2; ++j) {
+                dst[(d + j) * dst_stride]              = s * (float) ((int) (b->qs[j] & 0x0F) - 8);
+                dst[(d + j + QK4_0 / 2) * dst_stride]  = s * (float) ((int) (b->qs[j] >>   4) - 8);
+            }
+            ++b;
+        }
+    } else {
+        GGML_ABORT("fattn: unsupported quantized KV type");
+    }
+}
+
+static bool ggml_fa_kv_supported_tiled(ggml_type t) {
+    return t == GGML_TYPE_F16 || t == GGML_TYPE_F32 || t == GGML_TYPE_Q8_0 || t == GGML_TYPE_Q4_0;
+}
+
 static void ggml_compute_forward_flash_attn_ext_tiled(
         const ggml_compute_params * params,
         ggml_tensor * dst,
@@ -9084,11 +9122,13 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
                     for (int64_t dk = 0; dk < DK; dk++) {
                         K_f32[dk * KV_TILE_SZ + tk] = GGML_CPU_FP16_TO_FP32(k_f16[dk]);
                     }
-                } else {
+                } else if (kv_type == GGML_TYPE_F32) {
                     const float * k_f32_src = (const float *)k_data;
                     for (int64_t dk = 0; dk < DK; dk++) {
                         K_f32[dk * KV_TILE_SZ + tk] = k_f32_src[dk];
                     }
+                } else {
+                    ggml_fa_dequant_row(K_f32 + tk, KV_TILE_SZ, k_data, DK, kv_type);
                 }
             }
             memset(KQ, 0, Q_TILE_SZ * KV_TILE_SZ * sizeof(float));
@@ -9146,8 +9186,10 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
                 const char * v_data = (const char *)v->data + (ic + tk)*nbv1 + iv2*nbv2 + iv3*nbv3;
                 if (kv_type == GGML_TYPE_F16) {
                     ggml_cpu_fp16_to_fp32((const ggml_fp16_t *)v_data, V32 + tk * DV, DV);
-                } else {
+                } else if (kv_type == GGML_TYPE_F32) {
                     memcpy(V32 + tk * DV, v_data, DV * sizeof(float));
+                } else {
+                    ggml_fa_dequant_row(V32 + tk * DV, 1, v_data, DV, kv_type);
                 }
             }
             for (int tq = 0; tq < Q_TILE_SZ; tq++) {
@@ -9375,9 +9417,22 @@ static void ggml_compute_forward_flash_attn_ext_f16(
         static constexpr int64_t Q_TILE_SZ  = ggml_fa_tile_config::Q;
         bool use_tiled = !use_ref &&
                                (q->type == GGML_TYPE_F32 &&
-                                kv_is_f32_or_f16 &&
+                                ggml_fa_kv_supported_tiled(k->type) &&
                                 k->type == v->type &&
                                 neq1 >= Q_TILE_SZ);
+
+        static const bool fa_probe_on = (getenv("LLAMA_FA_PROBE") != nullptr);
+        if (fa_probe_on) {
+            static int probe_n = 0;
+            if (probe_n++ < 12) {
+                fprintf(stderr,
+                        "[FAPROBE] DK=%lld DV=%lld nq=%lld nkv=%lld q=%s k=%s v=%s "
+                        "split_path=%d tiled=%d use_ref=%d th=%d\n",
+                        (long long) DK, (long long) DV, (long long) neq1, (long long) nek1,
+                        ggml_type_name(q->type), ggml_type_name(k->type), ggml_type_name(v->type),
+                        (int) use_split_kv_path, (int) use_tiled, (int) use_ref, nth);
+            }
+        }
 #ifdef GGML_SIMD
 #if defined(__ARM_FEATURE_SVE)
         const int64_t f32_epr = svcntw();

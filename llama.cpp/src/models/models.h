@@ -2273,6 +2273,7 @@ struct llama_model_qwen3next : public llama_model_base {
                     ggml_tensor * inp_pos,
                             int   il);
 
+
         ggml_tensor * build_layer_attn_linear(
              llm_graph_input_rs * inp,
                     ggml_tensor * cur,
@@ -2345,6 +2346,21 @@ struct llama_model_qwen35 : public llama_model_base {
         std::pair<ggml_tensor *, ggml_tensor *> build_qkvz(
                     ggml_tensor * input,
                             int   il);
+
+        // when > 0, the GDN path uses this instead of ubatch.n_seq_tokens,
+        // so the decoder half can run on a sub-window of the ubatch.
+        int64_t ced_win = 0;
+
+        ggml_tensor * build_ced_decoder(
+        llm_graph_input_attn_kv * inp_attn,
+        llm_graph_input_rs      * inp_recr,
+                    ggml_tensor * inpL,
+                    ggml_tensor * inp_pos,
+                            int * sections,
+                            int   i0,
+                            int   n_win,
+                    ggml_tensor * h_pref,
+        const struct llama_ced_ctx &  ced);
 
         const llama_model & model;
     };

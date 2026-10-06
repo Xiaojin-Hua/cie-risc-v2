@@ -539,7 +539,10 @@ static results_perplexity perplexity(llama_context * ctx, const common_params & 
     // Example, we have a context window of 512, we will compute perplexity for each of the
     // last 256 tokens.  Then, we split the input up into context window size chunks to
     // process the entire prompt.
-    const int first = n_ctx/2;
+    // Default keeps the historical n_ctx/2. A graph that only emits a trailing
+    // window of logits (e.g. CED with a short tail) must override this, or the
+    // scored range includes positions whose logits were never computed.
+    const int first = params.ppl_first >= 0 ? params.ppl_first : n_ctx/2;
 
     for (int i = 0; i < n_chunk; i += n_seq) {
         const int start =     i * n_ctx;
@@ -1789,7 +1792,10 @@ static void kl_divergence(llama_context * ctx, const common_params & params) {
     auto    kld_ptr =    kld_values.data();
     auto p_diff_ptr = p_diff_values.data();
 
-    const int first = n_ctx/2;
+    // Default keeps the historical n_ctx/2. A graph that only emits a trailing
+    // window of logits (e.g. CED with a short tail) must override this, or the
+    // scored range includes positions whose logits were never computed.
+    const int first = params.ppl_first >= 0 ? params.ppl_first : n_ctx/2;
 
     for (int i = 0; i < n_chunk; i += n_seq) {
         const int start =     i * n_ctx;

@@ -537,6 +537,10 @@ struct common_params {
     bool    offline                    = false;
 
     int32_t ppl_stride      = 0;     // stride for perplexity calculations. If left at 0, the pre-existing approach will be used.
+    int32_t ppl_first       = -1;    // first position scored by perplexity. -1 = historical n_ctx/2.
+                                     // Set to n_ctx - <window> when the graph only produces
+                                     // logits for a trailing window (e.g. CED), otherwise the
+                                     // scored range would include positions never computed.
     int32_t ppl_output_type = 0;     // = 0 -> ppl output is as usual, = 1 -> ppl output is num_tokens, ppl, one per line
                                      //                                       (which is more convenient to use for plotting)
                                      //

@@ -27,6 +27,7 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdio>  // for GGML_ASSERT
+#include <cstdlib>  // for getenv (FA probe)
 #include <stdexcept>
 #include <thread>
 // clang-format off
@@ -1353,9 +1354,30 @@ class tensor_traits_common : public tensor_traits_base {
         const bool supported_shape = (DK > 0 && DK <= 128 && DV > 0 && DV <= 128);
         const bool supported_vlen  = (__riscv_vlenb() == 128);
 
+        static const bool fa_probe_on = (getenv("LLAMA_FA_PROBE") != nullptr);
+
         if (!(supported_prec && supported_types && supported_shape && supported_vlen)) {
+            if (fa_probe_on) {
+                static int ime_probe_n = 0;
+                if (ime_probe_n++ < 8) {
+                    fprintf(stderr,
+                            "[IMEPROBE] FALLBACK prec=%d types=%d(q=%s k=%s v=%s) shape=%d(DK=%lld DV=%lld) "
+                            "vlen=%d(vlenb=%zu want 128) -> generic ggml-cpu FA\n",
+                            (int) supported_prec, (int) supported_types,
+                            ggml_type_name(q->type), ggml_type_name(k->type), ggml_type_name(v->type),
+                            (int) supported_shape, (long long) DK, (long long) DV,
+                            (int) supported_vlen, __riscv_vlenb());
+                }
+            }
             ggml_compute_forward_flash_attn_ext(params, dst);
             return;
+        }
+        if (fa_probe_on) {
+            static int ime_probe_ok = 0;
+            if (ime_probe_ok++ < 4) {
+                fprintf(stderr, "[IMEPROBE] USING SPACEMIT IME FA KERNEL DK=%lld DV=%lld vlenb=%zu\n",
+                        (long long) DK, (long long) DV, __riscv_vlenb());
+            }
         }
 
         // total rows in q
