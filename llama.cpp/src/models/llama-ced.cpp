@@ -104,7 +104,48 @@ llama_ced_ctx llama_ced_load(const char * path, ggml_backend_buffer_type * buft)
     }
 
     // exact expected size, so a truncated or transposed export is caught here
-    const uint64_t mat_bytes  = (uint64_t) kv_dim * hidden * 2;   // fp16
+    // ---- projection weight format ------------------------------------------
+    // The projection is a plain ggml MUL_MAT.  With fp16 weights it has no
+    // spacemit traits case and therefore runs in the generic CPU kernel
+    // (measured 5.9 GMAC/s on K1 for this shape, ~10x below the IME1 path).
+    // LLAMA_QWEN35_CED_WQ=q4_0_k128 quantises the same fp16 payload at load time
+    // into the IME1-supported format and places the tensors in the CPU device's
+    // extra (repacking) buffer, which is what the IME1 path requires.
+    // Unset => unchanged fp16 behaviour.  The blob format is untouched.
+    // LLAMA_QWEN35_CED_WQ = q4_K | q4_0_k128 | fp16 (default fp16)
+    enum { CED_WQ_F16 = 0, CED_WQ_Q4K = 1, CED_WQ_Q40K128 = 2 };
+    // default: q4_K (measured 2026-10-11 on K1: 3.4% faster prefill, +0.076% PPL on
+    // wikitext vs fp16; q4_0_k128 is 3.5% faster but +0.139%).  LLAMA_QWEN35_CED_WQ=fp16
+    // restores the original exact-fp16 behaviour.
+    int ced_wq = CED_WQ_Q4K;
+    {
+        const char * e = std::getenv("LLAMA_QWEN35_CED_WQ");
+        if (e != nullptr && std::strcmp(e, "fp16") == 0) {
+            ced_wq = CED_WQ_F16;
+        } else if (e != nullptr && std::strcmp(e, "q4_0_k128") == 0) {
+            ced_wq = CED_WQ_Q40K128;
+        }
+    }
+    // the quantised formats need the row length to be a whole number of blocks
+    if (ced_wq != CED_WQ_F16) {
+        const int64_t blck = ggml_blck_size(ced_wq == CED_WQ_Q4K ? GGML_TYPE_Q4_K : GGML_TYPE_Q4_0_K128);
+        if (blck <= 0 || (int64_t) hidden % blck != 0) {
+            ced_warn("'%s': hidden=%u is not a multiple of %lld - falling back to fp16 projections",
+                     path, hidden, (long long) blck);
+            ced_wq = CED_WQ_F16;
+        }
+    }
+    const bool     ced_wq_q4    = ced_wq != CED_WQ_F16;
+    const ggml_type wq_type     = ced_wq == CED_WQ_Q4K     ? GGML_TYPE_Q4_K
+                                : ced_wq == CED_WQ_Q40K128 ? GGML_TYPE_Q4_0_K128
+                                                           : GGML_TYPE_F16;
+    const int64_t  wq_blck      = ced_wq_q4 ? ggml_blck_size(wq_type) : 1;
+    const int64_t  wq_tsize     = ced_wq_q4 ? ggml_type_size(wq_type) : 2;
+    const uint64_t wq_row_bytes = ced_wq_q4 ? (uint64_t) (hidden / wq_blck) * wq_tsize
+                                            : (uint64_t) hidden * 2;
+    const uint64_t wq_mat_bytes = (uint64_t) kv_dim * wq_row_bytes;
+
+    const uint64_t mat_bytes  = (uint64_t) kv_dim * hidden * 2;   // fp16 source in the blob
     const uint64_t want_bytes = (uint64_t) CED_HDR_BYTES + 4ull * n_cal +
                                 2ull * n_cal * mat_bytes;
     // Stat the file WITHOUT seeking: the payload is streamed straight after the
@@ -146,9 +187,9 @@ llama_ced_ctx llama_ced_load(const char * path, ggml_backend_buffer_type * buft)
     std::vector<ggml_tensor *>        ordered;
     ordered.reserve(2 * n_cal);
     for (uint32_t i = 0; i < n_cal; ++i) {
-        ggml_tensor * k = ggml_new_tensor_2d(ctx_raw, GGML_TYPE_F16,
+        ggml_tensor * k = ggml_new_tensor_2d(ctx_raw, wq_type,
                                              (int64_t) hidden, (int64_t) kv_dim);
-        ggml_tensor * v = ggml_new_tensor_2d(ctx_raw, GGML_TYPE_F16,
+        ggml_tensor * v = ggml_new_tensor_2d(ctx_raw, wq_type,
                                              (int64_t) hidden, (int64_t) kv_dim);
         if (k == nullptr || v == nullptr) {
             ced_warn("'%s': tensor creation failed - feature disabled", path);
@@ -168,6 +209,26 @@ llama_ced_ctx llama_ced_load(const char * path, ggml_backend_buffer_type * buft)
 
     if (buft == nullptr) {
         buft = ggml_backend_cpu_buffer_type();
+        if (ced_wq_q4) {
+            // the IME1 MUL_MAT traits fire only for tensors that live in the CPU
+            // device's extra (weight-repacking) buffer type
+            ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+            ggml_backend_buffer_type_t * extras = nullptr;
+            if (dev != nullptr) {
+                ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+                auto get_extra = (ggml_backend_dev_get_extra_bufts_t)
+                    ggml_backend_reg_get_proc_address(reg, "ggml_backend_dev_get_extra_bufts");
+                if (get_extra != nullptr) {
+                    extras = get_extra(dev);
+                }
+            }
+            if (extras != nullptr && extras[0] != nullptr) {
+                buft = extras[0];
+            } else {
+                ced_warn("'%s': no CPU extra buffer type available - q4_0_k128 tensors stay in the "
+                         "plain CPU buffer (correct, but the generic kernel will be used)", path);
+            }
+        }
     }
     ggml_backend_buffer * buf_raw = ggml_backend_alloc_ctx_tensors_from_buft(ctx_raw, buft);
     if (buf_raw == nullptr) {
@@ -181,6 +242,14 @@ llama_ced_ctx llama_ced_load(const char * path, ggml_backend_buffer_type * buft)
 
     // stream the payload straight into the tensors
     std::vector<unsigned char> stage((size_t) mat_bytes);
+    std::vector<unsigned char> qstage((size_t) wq_mat_bytes);
+    std::vector<float>         frow((size_t) hidden);
+    const struct ggml_type_traits * wq_traits = ced_wq_q4 ? ggml_get_type_traits(wq_type) : nullptr;
+    if (ced_wq_q4 && (wq_traits == nullptr || wq_traits->from_float_ref == nullptr)) {
+        ced_warn("'%s': no quantiser available for the requested CED weight format - feature disabled", path);
+        std::fclose(f);
+        return ced;
+    }
     for (uint32_t i = 0; i < n_cal; ++i) {
         for (int which = 0; which < 2; ++which) {
             if (std::fread(stage.data(), 1, (size_t) mat_bytes, f) != mat_bytes) {
@@ -189,7 +258,20 @@ llama_ced_ctx llama_ced_load(const char * path, ggml_backend_buffer_type * buft)
                 return ced;
             }
             ggml_tensor * t = ordered[2 * i + which];
-            ggml_backend_tensor_set(t, stage.data(), 0, (size_t) mat_bytes);
+            if (!ced_wq_q4) {
+                ggml_backend_tensor_set(t, stage.data(), 0, (size_t) mat_bytes);
+                continue;
+            }
+            // fp16 (blob) -> fp32 row -> q4_0_k128, one output row at a time
+            const ggml_fp16_t * src = reinterpret_cast<const ggml_fp16_t *>(stage.data());
+            for (uint32_t r = 0; r < kv_dim; ++r) {
+                for (uint32_t c = 0; c < hidden; ++c) {
+                    frow[c] = ggml_fp16_to_fp32(src[(size_t) r * hidden + c]);
+                }
+                wq_traits->from_float_ref(frow.data(), qstage.data() + (size_t) r * wq_row_bytes,
+                                          (int64_t) hidden);
+            }
+            ggml_backend_tensor_set(t, qstage.data(), 0, (size_t) wq_mat_bytes);
         }
     }
     std::fclose(f);
@@ -205,8 +287,12 @@ llama_ced_ctx llama_ced_load(const char * path, ggml_backend_buffer_type * buft)
     ced.buf         = buf;
 
     std::fprintf(stderr,
-            "CED: loaded %u projection layer(s) from '%s' (hidden=%u kv=%u split=%u tail=%u)\n",
-            n_cal, path, hidden, kv_dim, split, tail);
+            "CED: loaded %u projection layer(s) from '%s' (hidden=%u kv=%u split=%u tail=%u) "
+            "wq=%s (%llu B/matrix, buf=%s)\n",
+            n_cal, path, hidden, kv_dim, split, tail,
+            ced_wq == CED_WQ_Q4K ? "q4_K" : ced_wq == CED_WQ_Q40K128 ? "q4_0_k128" : "fp16",
+            (unsigned long long) wq_mat_bytes,
+            ggml_backend_buft_name(buft));
     return ced;
 }
 

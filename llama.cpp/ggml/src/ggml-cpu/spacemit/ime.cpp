@@ -371,6 +371,65 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
         GGML_ASSERT(barrier_idx < spine_init_barrier_count);
         spine_barrier_t * cur_barrier = &global_spine_env_info.init_barrier[barrier_idx];
 
+
+        // ---- prefill phase profiler: GGML_SPACEMIT_MM_PHASES=1 -------------
+        struct MmPhaseStats {
+            struct Ent { int64_t m, n, k; char path; int64_t cnt, tq, tb, tg, tbc, bbc, aread; };
+            Ent     e[512];
+            int     n = 0;
+            bool    on = false;
+            MmPhaseStats() {
+                const char * s = getenv("GGML_SPACEMIT_MM_PHASES");
+                on = (s != NULL && s[0] == '1');
+            }
+            void add(int64_t m, int64_t n_, int64_t k, char path, int64_t tq, int64_t tb, int64_t tg,
+                     int64_t tbc, int64_t bbc, int64_t aread) {
+                if (!on) {
+                    return;
+                }
+                for (int i = 0; i < n; i++) {
+                    if (e[i].m == m && e[i].n == n_ && e[i].k == k && e[i].path == path) {
+                        e[i].cnt++; e[i].tq += tq; e[i].tb += tb; e[i].tg += tg;
+                        e[i].tbc += tbc; e[i].bbc += bbc; e[i].aread += aread;
+                        return;
+                    }
+                }
+                if (n < (int) (sizeof(e) / sizeof(e[0]))) {
+                    e[n].m = m; e[n].n = n_; e[n].k = k; e[n].path = path;
+                    e[n].cnt = 1; e[n].tq = tq; e[n].tb = tb; e[n].tg = tg;
+                    e[n].tbc = tbc; e[n].bbc = bbc; e[n].aread = aread;
+                    n++;
+                }
+            }
+            ~MmPhaseStats() {
+                if (!on || n == 0) {
+                    return;
+                }
+                int64_t T = 0;
+                for (int i = 0; i < n; i++) {
+                    T += e[i].tq + e[i].tb + e[i].tg;
+                }
+                fprintf(stderr, "[spxmm] ===== pid=%d spacemit MUL_MAT phases (thread0, wall) total %ld us =====\n",
+                        (int) getpid(), (long) T);
+                fprintf(stderr, "[spxmm] %-6s %-7s %-7s %-5s %-6s %-10s %-8s %-12s %-10s %-10s %-10s\n",
+                        "M", "N", "K", "path", "n", "quant_us", "bar_us", "gemm_us", "bcopy_us", "bcopy_B", "a_read_MB");
+                for (int i = 0; i < n; i++) {
+                    fprintf(stderr, "[spxmm] %-6ld %-7ld %-7ld %-5c %-6ld %-10ld %-8ld %-12ld %-10ld %-10ld %-10.2f\n",
+                            (long) e[i].m, (long) e[i].n, (long) e[i].k, e[i].path, (long) e[i].cnt,
+                            (long) e[i].tq, (long) e[i].tb, (long) e[i].tg,
+                            (long) e[i].tbc, (long) e[i].bbc, (double) e[i].aread / 1048576.0);
+                }
+                fprintf(stderr, "[spxmm] sums: quant=%ld bar=%ld gemm=%ld\n",
+                        (long) [&]{ int64_t s = 0; for (int i = 0; i < n; i++) s += e[i].tq; return s; }(),
+                        (long) [&]{ int64_t s = 0; for (int i = 0; i < n; i++) s += e[i].tb; return s; }(),
+                        (long) [&]{ int64_t s = 0; for (int i = 0; i < n; i++) s += e[i].tg; return s; }());
+            }
+        };
+        static MmPhaseStats g_mmph;
+        const bool    spx_mm  = g_mmph.on;
+        const int64_t spx_tq0 = spx_mm ? ggml_time_us() : 0;
+        int64_t       spx_bc_us = 0, spx_bc_bytes = 0, spx_aread = 0;
+
         if (gemm_m == 1) {
             int task_per_thread = spacemit_kernels::div_round_up(a_k_blks, nth);
             int a_blk_start     = ith * task_per_thread;
@@ -403,7 +462,11 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             }
         }
 
+        const int64_t spx_tq1 = spx_mm ? ggml_time_us() : 0;
+
         ggml_barrier(params->threadpool);
+
+        const int64_t spx_tb1 = spx_mm ? ggml_time_us() : 0;
 
         const int64_t gemm_m_stride     = gemm_n / gemm_m > 64 ? gemm_m : 16;
         const int64_t gemm_m_blocked    = spacemit_kernels::div_round_up(gemm_m, gemm_m_stride);
@@ -494,9 +557,11 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 int64_t chunk = 0;
                 for (int64_t m_start = ith * row_align; m_start < gemm_m; m_start += row_align * nth, chunk++) {
                     const int64_t m_row_real = std::min(gemm_m - m_start, row_align);
+                    const int64_t spx_c1 = spx_mm ? ggml_time_us() : 0;
                     spacemit_kernels::rvv::memcpy1d(reinterpret_cast<uint8_t *>(tcm_buffer) + chunk * per_mb_rows_wsize,
                                                     quant_a_buffer + m_start * row_stride_a,
                                                     m_row_real * row_stride_a);
+                    if (spx_mm) { spx_bc_us += ggml_time_us() - spx_c1; spx_bc_bytes += m_row_real * row_stride_a; }
                 }
             }
             (void) g_chunks;
@@ -526,8 +591,10 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 
                 int64_t m_row_real = std::min(gemm_m - m_start, row_align);
 
+                const int64_t spx_c2 = spx_mm ? ggml_time_us() : 0;
                 spacemit_kernels::rvv::memcpy1d(tcm_buffer, quant_a_buffer + m_start * row_stride_a,
                                                 m_row_real * row_stride_a);
+                if (spx_mm) { spx_bc_us += ggml_time_us() - spx_c2; spx_bc_bytes += m_row_real * row_stride_a; }
 
                 int64_t n_blk_real = 0;
                 for (int64_t ni = 0; ni < gemm_n; ni += n_blk_real, b_col += n_blk_real * row_stride_b) {
@@ -647,11 +714,14 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             for (int64_t n0 = static_cast<int64_t>(ith) * ws_slab; n0 < gemm_n; n0 += ws_slab * nth) {
                 const int64_t nb_real = std::min(gemm_n - n0, ws_slab);
 
+                const int64_t spx_c0 = spx_mm ? ggml_time_us() : 0;
                 spacemit_kernels::rvv::memcpy1d(b_tcm, reinterpret_cast<uint8_t *>(w_data) + n0 * row_stride_b,
                                                 nb_real * row_stride_b);
+                if (spx_mm) { spx_bc_us += ggml_time_us() - spx_c0; spx_bc_bytes += nb_real * row_stride_b; }
 
                 for (int64_t m0 = 0; m0 < gemm_m; ) {
                     const int64_t rows = std::min(gemm_m - m0, static_cast<int64_t>(row_align));
+                    if (spx_mm) { spx_aread += rows * row_stride_a; }
                     auto rows_handled  = gemm_kernel(b_blk_len, quant_a_buffer + m0 * row_stride_a, b_tcm, b_zp,
                                                      output + m0 * gemm_n + n0, rows, nb_real, b_k_blks, gemm_n);
                     m0 += rows_handled;
@@ -703,6 +773,35 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                         rows_remaining -= rows_handled;
                     }
                 }
+            }
+        }
+        if (spx_mm) {
+            // re-derive which path the chain above actually took (the conditions only read
+            // variables that are not mutated by the chain, so this is exact)
+            char path_tag = 'X';
+            if (gemm_m == 1 && NB_COLS == 16 && ime1_int4 && vlen256 && (mm_path == 'd' || mm_path == 'D')) {
+                path_tag = 'D';
+            } else if ((mm_path == 'g' || mm_path == 'G') && gemm_m > 1 && gemm_n_stride == gemm_n &&
+                       tcm_buffer != nullptr &&
+                       spacemit_kernels::div_round_up(spacemit_kernels::div_round_up(gemm_m, row_align), nth) *
+                               per_mb_rows_wsize <=
+                           tcm_buffer_size) {
+                path_tag = 'G';
+            } else if (prefer_tcm && gemm_n_stride == gemm_n && tcm_buffer != nullptr &&
+                       per_mb_rows_wsize <= tcm_buffer_size) {
+                path_tag = 'P';
+            } else if ((mm_path == 'e' || mm_path == 'E') && gemm_m == 1 && tcm_buffer != nullptr &&
+                       (gemm_workspace_size + slab_cols * row_stride_b) <= tcm_buffer_size) {
+                path_tag = 'E';
+            } else if (prefer_tcm && tcm_buffer != nullptr && slab_cols * row_stride_b <= tcm_buffer_size) {
+                path_tag = 'B';
+            } else if ((mm_path == 'f' || mm_path == 'F') && gemm_m > 1 && ws_slab > 0 && tcm_buffer != nullptr) {
+                path_tag = 'F';
+            }
+            const int64_t spx_tg1 = ggml_time_us();
+            if (ith == 0) {
+                g_mmph.add(gemm_m, gemm_n, gemm_k, path_tag, spx_tq1 - spx_tq0, spx_tb1 - spx_tq1,
+                           spx_tg1 - spx_tb1, spx_bc_us, spx_bc_bytes, spx_aread);
             }
         }
     }
