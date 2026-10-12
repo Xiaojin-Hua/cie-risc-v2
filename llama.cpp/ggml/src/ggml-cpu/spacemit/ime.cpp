@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstdio>  // for GGML_ASSERT
 #include <cstdlib>  // for getenv (FA probe)
+#include <mutex>    // for std::call_once in the A-quantisation cache
 #include <stdexcept>
 #include <thread>
 // clang-format off
@@ -81,6 +82,105 @@ struct TLSContext {
 };
 
 thread_local TLSContext tls_context;
+
+extern "C" int ggml_threadpool_graph_id(struct ggml_threadpool * tp);
+
+// ---- cross-node A quantisation cache (env GGML_SPACEMIT_A_DEDUP, default on) ----
+//
+// Several MUL_MAT nodes consume the *same* activation with the same (M, K, block length):
+// attn_post_norm -> ffn_up + ffn_gate, attn_norm -> wqkv + wqkv_gate, attn_norm -> wq/wk/wv,
+// ced_attn_norm -> up/gate, and l_out-15 -> the four CED k/v projections.  Today each of them
+// re-quantises the whole activation into its own per-node workspace.  Measured redundancy in
+// the production model: 149 quantise passes per ubatch over only 94 distinct activations;
+// 64% of the fp32 bytes the quantisers read are re-reads of an activation already quantised.
+//
+// Correctness rests on four things:
+//   * the key is (graph id, tensor name, M, K, block length).  The graph id comes from
+//     ggml_threadpool::n_graph, which the pool bumps once per graph *before* the workers wake,
+//     so every thread agrees on it; it is what invalidates the cache between ubatches.
+//   * hit/miss is decided against the *committed* key, and thread 0 commits only after the
+//     quantise barrier.  So during a node every thread sees the same key, and on a miss every
+//     thread fills its own row slice -- the fill is collective.
+//   * the buffer is allocated once via std::call_once and never reallocated; a call whose
+//     workspace does not fit simply bypasses the cache.
+//   * single-threaded pools do not advance n_graph, so the cache is disabled when nth == 1.
+// Direct-mapped: 8 slots, each big enough for the largest *duplicated* activation
+// (M=512, K=2048 -> 1.03 MiB).  K=6144 activations need 3.2 MiB and have no duplicate
+// consumer, so they simply bypass the cache.
+static const int    SPX_A_DEDUP_SLOTS      = 8;
+static const size_t SPX_A_DEDUP_SLOT_BYTES = (size_t) 2 << 20;  // 16 MiB total, allocated once
+
+struct ADedupCache {
+    bool      on  = false;
+    uint8_t * buf = nullptr;
+
+    int64_t gen[SPX_A_DEDUP_SLOTS];
+    int64_t m[SPX_A_DEDUP_SLOTS];
+    int64_t k[SPX_A_DEDUP_SLOTS];
+    int64_t blk[SPX_A_DEDUP_SLOTS];
+    char    name[SPX_A_DEDUP_SLOTS][48];
+
+    ADedupCache() {
+        const char * e = getenv("GGML_SPACEMIT_A_DEDUP");
+        on             = (e == nullptr || e[0] != '0');
+        for (int i = 0; i < SPX_A_DEDUP_SLOTS; i++) {
+            gen[i] = -1; m[i] = k[i] = blk[i] = 0; name[i][0] = 0;
+        }
+    }
+    bool usable(int nth) const { return on && nth > 1; }
+
+    // every thread derives the same slot from the key, so the fill is collective and the
+    // commit target is unambiguous
+    static int slot_of(const char * nm, int64_t mm, int64_t kk, int64_t bb) {
+        uint64_t h = 1469598103934665603ULL;
+        for (const char * p = nm; p != nullptr && *p != 0; ++p) {
+            h ^= (uint64_t) (uint8_t) *p;
+            h *= 1099511628211ULL;
+        }
+        h ^= (uint64_t) mm * 1000003ULL;
+        h *= 1099511628211ULL;
+        h ^= (uint64_t) kk * 1000033ULL;
+        h *= 1099511628211ULL;
+        h ^= (uint64_t) bb;
+        return (int) (h % (uint64_t) SPX_A_DEDUP_SLOTS);
+    }
+    bool ensure(size_t need) {
+        if (need > SPX_A_DEDUP_SLOT_BYTES) {
+            return false;
+        }
+        static std::once_flag once;
+        std::call_once(once, [this] {
+            buf = (uint8_t *) malloc(SPX_A_DEDUP_SLOT_BYTES * (size_t) SPX_A_DEDUP_SLOTS);
+        });
+        return buf != nullptr;
+    }
+    uint8_t * slot(int s) const { return buf + (size_t) s * SPX_A_DEDUP_SLOT_BYTES; }
+    bool match(int s, int64_t g, const char * nm, int64_t mm, int64_t kk, int64_t bb) const {
+        return gen[s] == g && m[s] == mm && k[s] == kk && blk[s] == bb && nm != nullptr &&
+               strcmp(name[s], nm) == 0;
+    }
+    void commit(int s, int64_t g, const char * nm, int64_t mm, int64_t kk, int64_t bb) {
+        gen[s] = g;
+        m[s]   = mm;
+        k[s]   = kk;
+        blk[s] = bb;
+        snprintf(name[s], sizeof(name[s]), "%s", nm != nullptr ? nm : "");
+    }
+};
+static ADedupCache g_adedup;
+// hits / misses, printed when GGML_SPACEMIT_A_TRAFFIC=1 is set
+struct ADedupStats {
+    int64_t hit = 0, miss = 0, bypass = 0;
+    ~ADedupStats() {
+        const char * e = getenv("GGML_SPACEMIT_A_TRAFFIC");
+        if (e != nullptr && e[0] == '1' && (hit || miss)) {
+            fprintf(stderr, "[spxdedup] quantise passes: hit=%ld miss=%ld bypass=%ld (hit rate %.1f%%)\n",
+                    (long) hit, (long) miss, (long) bypass,
+                    100.0 * (double) hit / (double) (hit + miss));
+        }
+    }
+};
+static ADedupStats g_adedup_stats;
 
 template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> constexpr size_t get_repacked_block_type_size() {
     if constexpr (std::is_same_v<BLOC_TYPE, block_q6_K> || std::is_same_v<BLOC_TYPE, block_q8_0>) {
@@ -356,7 +456,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
         void *        tcm_buffer      = ggml::cpu::riscv64_spacemit::tls_context.tcm_buffer;
         const int64_t tcm_buffer_size = ggml::cpu::riscv64_spacemit::tls_context.tcm_buffer_size;
 
-        auto * quant_a_buffer = reinterpret_cast<uint8_t *>(ws_ptr);
+        uint8_t * quant_a = reinterpret_cast<uint8_t *>(ws_ptr);
 
         constexpr int64_t row_align = 4;
         const int64_t     row_blks  = spacemit_kernels::div_round_up(gemm_m, row_align);
@@ -430,13 +530,35 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
         const int64_t spx_tq0 = spx_mm ? ggml_time_us() : 0;
         int64_t       spx_bc_us = 0, spx_bc_bytes = 0, spx_aread = 0;
 
+        // ---- optional cross-node A quantisation cache ----
+        bool      a_dedup_use   = false;
+        bool      a_dedup_hit   = false;
+        int64_t   a_dedup_gen   = 0;
+        int       a_dedup_slot  = -1;
+        if (g_adedup.usable(nth) && gemm_m > 1 && src1->name[0] != 0) {
+            const size_t need = (size_t) gemm_m * (size_t) row_stride_a;
+            if (g_adedup.ensure(need)) {
+                a_dedup_slot = ADedupCache::slot_of(src1->name, gemm_m, gemm_k, (int64_t) a_blk_len);
+                a_dedup_gen  = ggml_threadpool_graph_id(params->threadpool);
+                a_dedup_use  = true;
+                quant_a      = g_adedup.slot(a_dedup_slot);
+                a_dedup_hit  = g_adedup.match(a_dedup_slot, a_dedup_gen, src1->name, gemm_m, gemm_k,
+                                              (int64_t) a_blk_len);
+            } else if (ith == 0) {
+                g_adedup_stats.bypass++;
+            }
+        }
+        if (a_dedup_use && ith == 0) {
+            if (a_dedup_hit) { g_adedup_stats.hit++; } else { g_adedup_stats.miss++; }
+        }
+        if (!a_dedup_hit) {
         if (gemm_m == 1) {
             int task_per_thread = spacemit_kernels::div_round_up(a_k_blks, nth);
             int a_blk_start     = ith * task_per_thread;
             int a_blk_end       = std::min(a_blk_start + task_per_thread, (int) a_k_blks);
             if (a_blk_start < a_blk_end) {
                 quantize_a_row_i8(a_blk_len, feature + a_blk_start * a_blk_len, (a_blk_end - a_blk_start) * a_blk_len,
-                                  quant_a_buffer + a_blk_start * block_stride_a);
+                                  quant_a + a_blk_start * block_stride_a);
             }
         } else {
             int task_per_thread = spacemit_kernels::div_round_up(row_blks, nth);
@@ -448,12 +570,12 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 
                 if (rows_tobe_handled == row_align && quantize_a_4row_i8 != nullptr) {
                     const float * a_row_ptr       = feature + m_idx * gemm_k;
-                    auto *        quant_a_row_ptr = quant_a_buffer + m_idx * row_stride_a;
+                    auto *        quant_a_row_ptr = quant_a + m_idx * row_stride_a;
                     quantize_a_4row_i8(a_blk_len, a_row_ptr, gemm_k, quant_a_row_ptr);
                 } else {
                     while (rows_tobe_handled) {
                         const float * a_row_ptr       = feature + m_idx * gemm_k;
-                        auto *        quant_a_row_ptr = quant_a_buffer + m_idx * row_stride_a;
+                        auto *        quant_a_row_ptr = quant_a + m_idx * row_stride_a;
                         quantize_a_row_i8(a_blk_len, a_row_ptr, gemm_k, quant_a_row_ptr);
                         rows_tobe_handled -= 1;
                         m_idx += 1;
@@ -461,10 +583,17 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 }
             }
         }
+        }  // !a_dedup_hit
 
         const int64_t spx_tq1 = spx_mm ? ggml_time_us() : 0;
 
         ggml_barrier(params->threadpool);
+
+        if (a_dedup_use && ith == 0) {
+            // every thread has finished writing its row slice (barrier above), so the buffer is
+            // complete and the key can be published for the next consumer of this activation
+            g_adedup.commit(a_dedup_slot, a_dedup_gen, src1->name, gemm_m, gemm_k, (int64_t) a_blk_len);
+        }
 
         const int64_t spx_tb1 = spx_mm ? ggml_time_us() : 0;
 
@@ -541,7 +670,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 uint8_t *     b_col = reinterpret_cast<uint8_t *>(w_data) + n_off * row_stride_b;
                 uint8_t *     b_zp  = block_type_has_zp<BLOC_TYPE>() ? b_col : nullptr;
 
-                gemm_kernel(b_blk_len, quant_a_buffer, b_col, b_zp, output + n_off,
+                gemm_kernel(b_blk_len, quant_a, b_col, b_zp, output + n_off,
                             /*count_m=*/1, NB_COLS, b_k_blks, gemm_n);
             }
         } else if ((mm_path == 'g' || mm_path == 'G') && gemm_m > 1 && gemm_n_stride == gemm_n &&
@@ -559,7 +688,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     const int64_t m_row_real = std::min(gemm_m - m_start, row_align);
                     const int64_t spx_c1 = spx_mm ? ggml_time_us() : 0;
                     spacemit_kernels::rvv::memcpy1d(reinterpret_cast<uint8_t *>(tcm_buffer) + chunk * per_mb_rows_wsize,
-                                                    quant_a_buffer + m_start * row_stride_a,
+                                                    quant_a + m_start * row_stride_a,
                                                     m_row_real * row_stride_a);
                     if (spx_mm) { spx_bc_us += ggml_time_us() - spx_c1; spx_bc_bytes += m_row_real * row_stride_a; }
                 }
@@ -592,7 +721,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 int64_t m_row_real = std::min(gemm_m - m_start, row_align);
 
                 const int64_t spx_c2 = spx_mm ? ggml_time_us() : 0;
-                spacemit_kernels::rvv::memcpy1d(tcm_buffer, quant_a_buffer + m_start * row_stride_a,
+                spacemit_kernels::rvv::memcpy1d(tcm_buffer, quant_a + m_start * row_stride_a,
                                                 m_row_real * row_stride_a);
                 if (spx_mm) { spx_bc_us += ggml_time_us() - spx_c2; spx_bc_bytes += m_row_real * row_stride_a; }
 
@@ -624,7 +753,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             // no longer overlaps its copy with the partner's compute.
             uint8_t * a_row = (uint8_t *) tcm_buffer;
             uint8_t * b_buf = (uint8_t *) tcm_buffer + gemm_workspace_size;
-            spacemit_kernels::rvv::memcpy1d(a_row, quant_a_buffer, gemm_workspace_size);
+            spacemit_kernels::rvv::memcpy1d(a_row, quant_a, gemm_workspace_size);
             uint8_t * b_zp = block_type_has_zp<BLOC_TYPE>() ? b_buf : nullptr;
 
             for (int64_t ni = static_cast<int64_t>(ith) * slab_cols; ni < gemm_n; ni += slab_cols * nth) {
@@ -644,7 +773,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 }
             }
         } else if (prefer_tcm && tcm_buffer != nullptr && slab_cols * row_stride_b <= tcm_buffer_size) {
-            uint8_t * a_row = quant_a_buffer;
+            uint8_t * a_row = quant_a;
             uint8_t * b_col = reinterpret_cast<uint8_t *>(tcm_buffer);
             if ((gemm_workspace_size + slab_cols * row_stride_b) <= tcm_buffer_size) {
                 a_row = (uint8_t *) tcm_buffer;
@@ -658,16 +787,16 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             if (ith % 2 == 0 && nb_real > 0) {
                 spacemit_kernels::rvv::memcpy1d(b_col, reinterpret_cast<uint8_t *>(w_data) + ni * row_stride_b,
                                                 nb_real * row_stride_b);
-                if (a_row != quant_a_buffer) {
-                    spacemit_kernels::rvv::memcpy1d(a_row, quant_a_buffer, gemm_workspace_size);
+                if (a_row != quant_a) {
+                    spacemit_kernels::rvv::memcpy1d(a_row, quant_a, gemm_workspace_size);
                 }
             }
 
             spine_barrier_wait(cur_barrier);
 
             if (ith % 2 != 0 && nb_real > 0) {
-                if (a_row != quant_a_buffer) {
-                    spacemit_kernels::rvv::memcpy1d(a_row, quant_a_buffer, gemm_workspace_size);
+                if (a_row != quant_a) {
+                    spacemit_kernels::rvv::memcpy1d(a_row, quant_a, gemm_workspace_size);
                 }
                 spacemit_kernels::rvv::memcpy1d(b_col, reinterpret_cast<uint8_t *>(w_data) + ni * row_stride_b,
                                                 nb_real * row_stride_b);
@@ -722,7 +851,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 for (int64_t m0 = 0; m0 < gemm_m; ) {
                     const int64_t rows = std::min(gemm_m - m0, static_cast<int64_t>(row_align));
                     if (spx_mm) { spx_aread += rows * row_stride_a; }
-                    auto rows_handled  = gemm_kernel(b_blk_len, quant_a_buffer + m0 * row_stride_a, b_tcm, b_zp,
+                    auto rows_handled  = gemm_kernel(b_blk_len, quant_a + m0 * row_stride_a, b_tcm, b_zp,
                                                      output + m0 * gemm_n + n0, rows, nb_real, b_k_blks, gemm_n);
                     m0 += rows_handled;
                 }
@@ -754,7 +883,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 for (int64_t ni = 0; ni < n_count; ni += n_blk_real, b_col += n_blk_real * row_stride_b) {
                     n_blk_real = std::min(n_count - ni, n_blk);
 
-                    uint8_t * a_row = quant_a_buffer + m_start * row_stride_a;
+                    uint8_t * a_row = quant_a + m_start * row_stride_a;
 
                     float * c_blk = output + m_start * gemm_n + n_start + ni;
 

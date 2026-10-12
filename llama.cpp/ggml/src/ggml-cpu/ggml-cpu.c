@@ -631,6 +631,13 @@ int ggml_threadpool_chunk_add(struct ggml_threadpool * tp, int value) {
     return atomic_fetch_add_explicit(&tp->current_chunk, value, memory_order_relaxed);
 }
 
+// [A-traffic] per-graph id visible to the spacemit tensor traits (see ime.cpp).  n_graph is
+// `(graph_counter << GGML_THREADPOOL_N_THREADS_BITS) | n_threads`, so the high bits count
+// graphs.  It is stored before the workers are woken, so all threads read the same value.
+int ggml_threadpool_graph_id(struct ggml_threadpool * tp) {
+    return atomic_load_explicit(&tp->n_graph, memory_order_relaxed) >> GGML_THREADPOOL_N_THREADS_BITS;
+}
+
 #if defined(__gnu_linux__)
 static cpu_set_t ggml_get_numa_affinity(void) {
     cpu_set_t cpuset;
