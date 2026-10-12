@@ -1,5 +1,9 @@
 #include "ops.h"
 
+#if defined(__riscv_v_intrinsic)
+#include <riscv_vector.h>
+#endif
+
 #include "ggml-cpu.h"
 #include "ggml-impl.h"
 #include "ggml-quants.h"
@@ -9925,10 +9929,57 @@ static void ggml_compute_forward_ssm_conv_state_f32(
     const char * wp = (const char *) weight->data;
     char *       dp = (char *) dst->data;
 
+#if defined(__riscv_v_intrinsic)
+    // scalar force-switch for the A/B and as a safety fallback
+    static int ssmconv_scalar = -1;
+    if (ssmconv_scalar < 0) {
+        const char * e = getenv("LLAMA_QWEN35_SSMCONV");
+        ssmconv_scalar = (e != nullptr && strcmp(e, "scalar") == 0) ? 1 : 0;
+    }
+    // Layout as used by the real model: qkv arrives as a TRANSPOSE view
+    // (ne = [n_t, d_inner], nb[0] = d_inner*4, nb[1] = 4) and dst is [d_inner, n_t],
+    // so the CHANNEL axis is contiguous in both.  Keep the original loop order
+    // (time outer, channel inner) -- that keeps every tap row and the output row a
+    // sequential stream -- and vectorise the channel axis.
+    const bool ssmconv_rvv = !ssmconv_scalar && nc == 4 && nb_d0 == sizeof(float) &&
+                             nb_q1 == sizeof(float) && n_t > 3 && ir > 0;
+#else
+    const bool ssmconv_rvv = false;
+#endif
+
     for (int i3 = 0; i3 < n_s; ++i3) {
         for (int i2 = 0; i2 < n_t; ++i2) {
             float * x = (float *) (dp + ir0 * nb_d0 + i2 * nb_d1 + i3 * nb_d2);
 
+#if defined(__riscv_v_intrinsic)
+            if (ssmconv_rvv && i2 >= 3) {
+                const size_t vlmax = __riscv_vsetvlmax_e32m2();
+                for (int c0 = 0; c0 < ir; c0 += (int) vlmax) {
+                    const size_t vl = __riscv_vsetvl_e32m2((size_t) (ir - c0));
+                    const int    ch = ir0 + c0;
+                    // tap i -> qkv row (i2 - 3 + i); channels contiguous, weight strided by nb_w1
+                    const char * q0 = qp + (size_t) (i2 - 3) * nb_q0 + (size_t) ch * nb_q1 + (size_t) i3 * nb_q2;
+                    vfloat32m2_t acc = __riscv_vfmul_vv_f32m2(
+                            __riscv_vle32_v_f32m2((const float *) (q0 + 0 * nb_q0), vl),
+                            __riscv_vlse32_v_f32m2((const float *) (wp + 0 * nb_w0 + (size_t) ch * nb_w1),
+                                                   (ptrdiff_t) nb_w1, vl), vl);
+                    acc = __riscv_vfadd_vv_f32m2(acc, __riscv_vfmul_vv_f32m2(
+                            __riscv_vle32_v_f32m2((const float *) (q0 + 1 * nb_q0), vl),
+                            __riscv_vlse32_v_f32m2((const float *) (wp + 1 * nb_w0 + (size_t) ch * nb_w1),
+                                                   (ptrdiff_t) nb_w1, vl), vl), vl);
+                    acc = __riscv_vfadd_vv_f32m2(acc, __riscv_vfmul_vv_f32m2(
+                            __riscv_vle32_v_f32m2((const float *) (q0 + 2 * nb_q0), vl),
+                            __riscv_vlse32_v_f32m2((const float *) (wp + 2 * nb_w0 + (size_t) ch * nb_w1),
+                                                   (ptrdiff_t) nb_w1, vl), vl), vl);
+                    acc = __riscv_vfadd_vv_f32m2(acc, __riscv_vfmul_vv_f32m2(
+                            __riscv_vle32_v_f32m2((const float *) (q0 + 3 * nb_q0), vl),
+                            __riscv_vlse32_v_f32m2((const float *) (wp + 3 * nb_w0 + (size_t) ch * nb_w1),
+                                                   (ptrdiff_t) nb_w1, vl), vl), vl);
+                    __riscv_vse32_v_f32m2(x + c0, acc, vl);
+                }
+                continue;
+            }
+#endif
             for (int i1 = 0; i1 < ir; ++i1) {
                 float sumf = 0.0f;
 
