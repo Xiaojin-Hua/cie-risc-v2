@@ -8949,6 +8949,19 @@ static bool ggml_fa_kv_supported_tiled(ggml_type t) {
     return t == GGML_TYPE_F16 || t == GGML_TYPE_F32 || t == GGML_TYPE_Q8_0 || t == GGML_TYPE_Q4_0;
 }
 
+#if defined(__riscv_v_intrinsic)
+// RVV mask dequant for the tiled flash-attention: fp16 -> fp32 + slope scale + the
+// "all entries are -inf" skip test, in one pass.  See patch_fa_mask_land.py.
+static bool spx_fa_mask_rvv_enabled(void) {
+    static int e = -1;
+    if (e == -1) {
+        const char * s = getenv("GGML_SPACEMIT_FA_MASK_RVV");
+        e = (s != NULL && s[0] == '0') ? 0 : 1;   // default ON
+    }
+    return e != 0;
+}
+#endif
+
 static void ggml_compute_forward_flash_attn_ext_tiled(
         const ggml_compute_params * params,
         ggml_tensor * dst,
@@ -9100,11 +9113,34 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
                 bool can_skip = true;
                 for (int tq = 0; tq < tile_rows; tq++) {
                     const ggml_fp16_t * mp_row = (const ggml_fp16_t *)((const char *) mask->data + (iq1 + tq)*mask->nb[1] + (iq2%mask->ne[2])*mask->nb[2] + (iq3%mask->ne[3])*mask->nb[3]);
+#if defined(__riscv_v_intrinsic)
+                    if (spx_fa_mask_rvv_enabled()) {
+                        float * mrow = mask32 + tq * KV_TILE_SZ;
+                        int64_t t = 0;
+                        int nfinite = 0;
+                        for (; t < kv_tile; ) {
+                            const size_t vl = __riscv_vsetvl_e16m2(kv_tile - t);
+                            const vfloat16m2_t h = __riscv_vle16_v_f16m2(
+                                (const _Float16 *) (mp_row + ic + t), vl);
+                            const vfloat32m4_t f = __riscv_vfmul_vf_f32m4(
+                                __riscv_vfwcvt_f_f_v_f32m4(h, vl), slope, vl);
+                            __riscv_vse32_v_f32m4(mrow + t, f, vl);
+                            nfinite += (int) __riscv_vcpop_m_b8(
+                                __riscv_vmfne_vf_f32m4_b8(f, -INFINITY, vl), vl);
+                            t += (int64_t) vl;
+                        }
+                        if (nfinite != 0) {
+                            can_skip = false;
+                        }
+                    } else
+#endif
+                    {
                     for (int tk = 0; tk < kv_tile; tk++) {
                         mask32[tq * KV_TILE_SZ + tk] = slope * GGML_CPU_FP16_TO_FP32(mp_row[ic + tk]);
                         if (mask32[tq * KV_TILE_SZ + tk] != -INFINITY) {
                             can_skip = false;
                         }
+                    }
                     }
                     // Pad remaining mask entries with -inf
                     for (int tk = kv_tile; tk < KV_TILE_SZ; tk++) {
