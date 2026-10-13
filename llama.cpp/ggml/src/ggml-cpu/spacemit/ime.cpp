@@ -168,6 +168,29 @@ struct ADedupCache {
     }
 };
 static ADedupCache g_adedup;
+
+// ---- A-offset fold (env GGML_SPACEMIT_A_FOLD=1) ----------------------------
+// The Q4_0_K128 M4 inner loop carries 8 `vadd.vi -8` per iteration to undo the B nibble
+// zero point.  Since
+//     sum_k a*(q-8) = sum_k a*q - 8*sum_k a
+// and `sum_k a` only depends on the (4-row, K-block) A slice, the correction can be applied
+// once per K block instead of once per iteration.  quantize_a_4row_i8_with_sum() emits it as
+// two int32 row-broadcast patterns (64 B) appended to each 592 B A block record, so the A
+// stride grows by 16 B per row per K block.  Integer arithmetic throughout => bit-identical.
+static bool spx_a_fold_enabled() {
+    static const bool on = [] {
+        const char * e = getenv("GGML_SPACEMIT_A_FOLD");
+        return e == nullptr || e[0] != '0';  // default ON; GGML_SPACEMIT_A_FOLD=0 restores the
+                                             // per-iteration B zero-point shift
+    }();
+    return on;
+}
+
+static constexpr size_t spx_a_fold_extra_per_blk() {
+    // two int32 row-broadcast patterns (Sa, Sb) per 4-row x K-block group = 64 B,
+    // i.e. 16 B per row per K block on top of q8_blk_size(blk_len)
+    return 4 * sizeof(int32_t);
+}
 // hits / misses, printed when GGML_SPACEMIT_A_TRAFFIC=1 is set
 struct ADedupStats {
     int64_t hit = 0, miss = 0, bypass = 0;
@@ -242,6 +265,13 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     } else if constexpr (INTER_SIZE == QK4_0 || INTER_SIZE == QK4_0_K64 || INTER_SIZE == QK4_0_K128) {
                         size = spacemit_kernels::div_round_up(src1_nelements, INTER_SIZE) *
                                spacemit_kernels::q8_blk_size(INTER_SIZE, true);
+                        if constexpr (INTER_SIZE == QK4_0_K128) {
+                            // [A-offset fold] the folded A record is q8_blk_size(128) + 16 B per row
+                            if (spx_a_fold_enabled()) {
+                                size = spacemit_kernels::div_round_up(src1_nelements, INTER_SIZE) *
+                                       (spacemit_kernels::q8_blk_size(INTER_SIZE) + spx_a_fold_extra_per_blk());
+                            }
+                        }
                     } else if constexpr (INTER_SIZE == 256) {
                         size = spacemit_kernels::div_round_up(src1_nelements, 256) *
                                spacemit_kernels::q8_hp_blk_size(256, true, true);
@@ -439,6 +469,16 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 #endif
         if (!set_kernel_impl) {
             GGML_ABORT("no kernel implementation found for the block type");
+        }
+
+        // [A-offset fold] switch the Q4_0_K128 M4 path to the folded zero-point kernel and the
+        // matching A layout.  Requires gemm_m % 4 == 0 because the tail rows would otherwise be
+        // quantised by the single-row quantiser, which does not emit the block sums.
+        if (spx_a_fold_enabled() && std::is_same_v<BLOC_TYPE, block_q4_0_k128> && gemm_m > 1 &&
+            (gemm_m % 4) == 0) {
+            block_stride_a     = spacemit_kernels::q8_blk_size(a_blk_len) + spx_a_fold_extra_per_blk();
+            quantize_a_4row_i8 = spacemit_kernels::ime1::quantize_a_4row_i8_with_sum;
+            gemm_kernel        = spacemit_kernels::ime1::gemm_kernel_i8i4_fold;
         }
 
         const int64_t a_k_blks = spacemit_kernels::div_round_up(gemm_k, a_blk_len);

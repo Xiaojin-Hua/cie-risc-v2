@@ -93,6 +93,24 @@ void quantize_a_row_i8(size_t blk_len, const float * a_ptr, size_t count_k, uint
 
 void quantize_a_4row_i8(size_t blk_len, const float * a_ptr, size_t count_k, uint8_t * quant_a_ptr);
 
+// [A-offset fold] BlkLen=128 only: same quantisation, plus the per-K-block sums of the
+// quantised int8 activations, stored as the two int32 row-broadcast patterns the folded
+// kernel subtracts.  The A block record grows to 592 B per 4-row group (148 B per row), i.e.
+// 16 B more per row per K block than q8_blk_size(128).
+void quantize_a_4row_i8_with_sum(size_t blk_len, const float * a_ptr, size_t count_k, uint8_t * quant_a_ptr);
+
+// [A-offset fold] BlkLen=128 and count_m>=4 only; falls back to gemm_kernel_i8i4 otherwise.
+// Requires an A operand produced by quantize_a_4row_i8_with_sum.
+size_t gemm_kernel_i8i4_fold(size_t          blk_len,
+                             const uint8_t * quant_a_ptr,
+                             const uint8_t * quant_b_data,
+                             const uint8_t * quant_b_zp,
+                             float *         c_ptr,
+                             size_t          count_m,
+                             size_t          count_n,
+                             size_t          k_blks,
+                             size_t          ldc);
+
 }  // namespace ime1
 
 namespace ime2 {
