@@ -8962,6 +8962,33 @@ static bool spx_fa_mask_rvv_enabled(void) {
 }
 #endif
 
+// SPX: the flash-attention Q tile is chosen at run time.
+// A large tile (128) amortises the per-(q_tile,kv_tile) K/V packing and mask dequantisation and
+// gives the Q*K^T gemm a bigger M, but it also destroys causal tile skipping for short
+// sequences: with n_tokens == 128 the whole sequence becomes ONE q tile, so both kv tiles have to
+// be processed instead of one (skipped).  Measured on K1: pp512 FA node -5.90% (4/4 paired),
+// pp128 e2e -1.16%.  Hence long -> 128, short -> 64.
+// GGML_SPACEMIT_FA_TILE_Q=<n> forces a fixed tile; unset or 0 means auto.
+static int spx_fa_tile_q(int64_t n_tokens) {
+    static int forced = -2;
+    if (forced == -2) {
+        const char * s = getenv("GGML_SPACEMIT_FA_TILE_Q");
+        forced = (s != NULL && s[0] != '\0') ? atoi(s) : -1;
+    }
+    if (forced > 0) {
+        return forced;
+    }
+    // 256 needs n_tokens >= 256 or the tiled path is not taken at all (neq1 >= Q);
+    // <=128 keeps the causal kv-tile skipping effective.
+    if (n_tokens >= 256) {
+        return 256;
+    }
+    if (n_tokens > 128) {
+        return 128;
+    }
+    return 64;
+}
+
 static void ggml_compute_forward_flash_attn_ext_tiled(
         const ggml_compute_params * params,
         ggml_tensor * dst,
@@ -9036,8 +9063,9 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
 
     int ith = params->ith;
 
-    static constexpr int Q_TILE_SZ  = ggml_fa_tile_config::Q;
+    static constexpr int Q_TILE_SZ  = ggml_fa_tile_config::Q;   // layout / stack max (128)
     static constexpr int KV_TILE_SZ = ggml_fa_tile_config::KV;
+    const int QT = spx_fa_tile_q(neq1);                         // runtime tile extent (64 or 128)
 
     int ir = ir0;
     while (ir < ir1) {
@@ -9050,7 +9078,7 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
         // - limited by tile size (Q_TILE_SZ)
         // - limited by chunk boundary (ir1 - ir)
         // - limited by head boundary (neq1 - iq1) to avoid crossing into next head
-        const int tile_rows = MIN(Q_TILE_SZ, MIN((int)(ir1 - ir), (int)(neq1 - iq1)));
+        const int tile_rows = MIN(QT, MIN((int)(ir1 - ir), (int)(neq1 - iq1)));
         GGML_ASSERT(tile_rows > 0);
 
         const uint32_t h = iq2; // head index
@@ -9059,7 +9087,7 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
         float S[Q_TILE_SZ];
         float M[Q_TILE_SZ];
 
-        for (int i = 0 ; i < Q_TILE_SZ; ++i) {
+        for (int i = 0 ; i < QT; ++i) {
             S[i] = 0.;
             M[i] = -INFINITY;
         }
@@ -9097,7 +9125,7 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
                 const float * pq = (const float *) ((char *) q->data + ((iq1 + tq)*nbq1 + iq2*nbq2 + iq3*nbq3));
                 memcpy(Q_f32 + tq * DK, pq, DK * sizeof(float));
             }
-            for (int tq = tile_rows; tq < Q_TILE_SZ; tq++) {
+            for (int tq = tile_rows; tq < QT; tq++) {
                 memset(Q_f32 + tq * DK, 0, DK * sizeof(float));
             }
         }
@@ -9171,13 +9199,13 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
                     ggml_fa_dequant_row(K_f32 + tk, KV_TILE_SZ, k_data, DK, kv_type);
                 }
             }
-            memset(KQ, 0, Q_TILE_SZ * KV_TILE_SZ * sizeof(float));
-            simd_gemm(KQ, (const float *)Q_q, K_f32, Q_TILE_SZ, DK, KV_TILE_SZ);
-            ggml_vec_scale_f32(Q_TILE_SZ * KV_TILE_SZ, KQ, scale);
+            memset(KQ, 0, QT * KV_TILE_SZ * sizeof(float));
+            simd_gemm(KQ, (const float *)Q_q, K_f32, QT, DK, KV_TILE_SZ);
+            ggml_vec_scale_f32(QT * KV_TILE_SZ, KQ, scale);
 
             // Set padded KQ entries to -inf so softmax gives them zero weight
             if (kv_tile < KV_TILE_SZ) {
-                for (int tq = 0; tq < Q_TILE_SZ; tq++) {
+                for (int tq = 0; tq < QT; tq++) {
                     for (int tk = kv_tile; tk < KV_TILE_SZ; tk++) {
                         KQ[tq * KV_TILE_SZ + tk] = -INFINITY;
                     }
@@ -9185,8 +9213,8 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
             }
 
             if (logit_softcap != 0.0f) {
-                ggml_vec_tanh_f32(Q_TILE_SZ * KV_TILE_SZ, KQ, KQ);
-                ggml_vec_scale_f32(Q_TILE_SZ * KV_TILE_SZ, KQ, logit_softcap);
+                ggml_vec_tanh_f32(QT * KV_TILE_SZ, KQ, KQ);
+                ggml_vec_scale_f32(QT * KV_TILE_SZ, KQ, logit_softcap);
             }
 
             if (mask) {
@@ -9195,7 +9223,7 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
 
             bool skip[Q_TILE_SZ] = {};
 
-            for (int tq = 0; tq < Q_TILE_SZ; tq++) {
+            for (int tq = 0; tq < QT; tq++) {
                 float * kq_row = KQ + tq * KV_TILE_SZ;
 
                 float tile_max;
@@ -9232,12 +9260,12 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
                     ggml_fa_dequant_row(V32 + tk * DV, 1, v_data, DV, kv_type);
                 }
             }
-            for (int tq = 0; tq < Q_TILE_SZ; tq++) {
+            for (int tq = 0; tq < QT; tq++) {
                 if (skip[tq]) {
                     memset(KQ + tq * KV_TILE_SZ, 0, KV_TILE_SZ * sizeof(float));
                 }
             }
-            simd_gemm(VKQ32, KQ, V32, Q_TILE_SZ, KV_TILE_SZ, DV);
+            simd_gemm(VKQ32, KQ, V32, QT, KV_TILE_SZ, DV);
         }
 
         // sinks (apply only to valid rows in the tile)
@@ -9454,12 +9482,12 @@ static void ggml_compute_forward_flash_attn_ext_f16(
 
         const int64_t dr = (nr + nchunk - 1) / nchunk;
 
-        static constexpr int64_t Q_TILE_SZ  = ggml_fa_tile_config::Q;
+        const int64_t QT = spx_fa_tile_q(neq1);
         bool use_tiled = !use_ref &&
                                (q->type == GGML_TYPE_F32 &&
                                 ggml_fa_kv_supported_tiled(k->type) &&
                                 k->type == v->type &&
-                                neq1 >= Q_TILE_SZ);
+                                neq1 >= QT);
 
         static const bool fa_probe_on = (getenv("LLAMA_FA_PROBE") != nullptr);
         if (fa_probe_on) {

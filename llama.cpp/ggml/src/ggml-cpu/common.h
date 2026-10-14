@@ -6,7 +6,9 @@
 #include "ggml-impl.h"
 #include "simd-mappings.h"
 
-#define GGML_FA_TILE_Q  64
+// GGML_FA_TILE_Q is the LAYOUT / scratch-sizing maximum (see spx_fa_tile_q in ops.cpp);
+// the kernel picks 128 or 64 at run time depending on the sequence length.
+#define GGML_FA_TILE_Q  256
 #define GGML_FA_TILE_KV 64
 
 #ifdef __cplusplus
