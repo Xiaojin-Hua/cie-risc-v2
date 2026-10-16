@@ -1380,12 +1380,21 @@ class tensor_traits_common : public tensor_traits_base {
                     const int64_t neq2    = op->src[0]->ne[2];  // number of query heads
                     const int64_t DK      = op->src[1]->ne[0];
                     const int64_t DV      = op->src[2]->ne[0];  // DV
+                    const int64_t neq1    = op->src[0]->ne[1];
+                    const int64_t nek1    = op->src[1]->ne[1];
 
                     // Tiled flash attention scratch (tile sizes defined in common.h)
                     // Per-thread: Q_q + KQ + mask + VKQ32 + V32 + K_f32 + padding
+                    // V32/K_f32 now hold every kv tile of the current head when the tiled path can
+                    // run (neq1 >= GGML_FA_TILE_KV, see spx_fa_tile_q in ops.cpp), so their row
+                    // extent is ceil(nek1/KV)*KV.  Must match the pointer arithmetic in
+                    // ggml_compute_forward_flash_attn_ext_tiled (ops.cpp).
+                    const int64_t kv_alloc = (neq1 >= GGML_FA_TILE_KV)
+                                           ? ((nek1 + GGML_FA_TILE_KV - 1) / GGML_FA_TILE_KV) * GGML_FA_TILE_KV
+                                           : (int64_t) GGML_FA_TILE_KV;
                     size_t prefill = sizeof(float) *
                                      (GGML_FA_TILE_Q * DK + 2 * GGML_FA_TILE_Q * GGML_FA_TILE_KV + GGML_FA_TILE_Q * DV +
-                                      GGML_FA_TILE_KV * DV + GGML_FA_TILE_KV * DK) *
+                                      kv_alloc * DV + kv_alloc * DK) *
                                      n_tasks;
 
                     // Decode path: n_kv_chunks = n_tasks (one chunk per thread)
