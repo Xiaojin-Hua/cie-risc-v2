@@ -28,10 +28,20 @@
 // ---------------------------------------------------------------------------
 namespace {
 
-// The shipped best configuration: drop encoder layer 9.  Applied as a DEFAULT
-// (only while CED is active); LLAMA_QWEN35_ENC_SKIP overrides it, and the
-// literal values off/none/- disable it.
-static const int ENC_SKIP_DEFAULT = 9;
+// Encoder-layer pruning is OFF by default.
+//
+// It used to default to {9} ("the shipped best configuration").  That default is
+// wrong: on the 160-question Chinese multiple-choice eval
+// (results/2026-10-17-k1-acc-tail) dropping layer 9 costs 18.1 pp -- 73/160
+// (45.62%) -> 44/160 (27.50%), exact McNemar p=1e-4 -- *by itself*, with CED
+// entirely unloaded.  The CED projection recovers none of it (-1.9 pp, p=0.25
+// NS), and a projection retrained on the pruned model could not either: the
+// ceiling for any prefix-K/V map is the pruned model's own no-pruning score,
+// 27.50%.  Dropping a whole GDN layer is a model edit, not a compression.
+//
+// LLAMA_QWEN35_ENC_SKIP=9 restores the old behaviour; off/none/- are still
+// accepted and now mean the default.
+static const int ENC_SKIP_DEFAULT = -1;
 
 const std::vector<int> & enc_list(const char * name, int default_id) {
     // reserve so emplace_back never reallocates: callers hold the returned

@@ -93,7 +93,11 @@ llama_ced_ctx llama_ced_load(const char * path,
 // Any problem (missing file, bad magic, dimension mismatch) leaves the ctx
 // INACTIVE so the model runs stock -- a broken blob must never be fatal.
 #define LLAMA_CED_SHIPPED_BLOB "/home/bianbu/k64-precision/models/ced_proj_vB.bin"
-#define LLAMA_CED_DEFAULT_TAIL 128
+// 128 until 2026-10-17.  Lowered to 16: the window is absolute, so it dominates
+// short prompts, and 16 measured faster at pp128/pp512/pp10240 with accuracy
+// unchanged (74/160 vs 73/160, McNemar p=1.0).  See
+// results/2026-10-17-k1-acc-tail/REPORT.md sections 11.2 and 12.
+#define LLAMA_CED_DEFAULT_TAIL 16
 
 llama_ced_ctx llama_ced_load_from_env(uint32_t n_layer,
                                       uint32_t n_embd,
