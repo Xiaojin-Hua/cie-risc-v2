@@ -698,9 +698,11 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                                std::is_same_v<BLOC_TYPE, block_q4_K>;
         const bool vlen256 = (__riscv_vlenb() * 8 == 256);
 
-        if (gemm_m == 1 && NB_COLS == 16 && ime1_int4 && vlen256 &&
+        if (gemm_m == 1 && (NB_COLS == 16 || NB_COLS == 20) && ime1_int4 && vlen256 &&
             (mm_path == 'd' || mm_path == 'D')) {
-            const int64_t n_groups = gemm_n / NB_COLS;
+            // ceil, not floor: NB_COLS need not divide gemm_n (e.g. 2048 % 20 == 8); the last
+            // group is narrower and the M=1 kernel's tail path writes only the valid columns.
+            const int64_t n_groups = spacemit_kernels::div_round_up(gemm_n, NB_COLS);
             const int64_t gpt      = spacemit_kernels::div_round_up(n_groups, nth);
             const int64_t g_start  = std::min(static_cast<int64_t>(ith) * gpt, n_groups);
             const int64_t g_end    = std::min(g_start + gpt, n_groups);

@@ -3927,6 +3927,39 @@ enum ggml_rms_norm_fuse_op {
     GGML_RMS_NORM_FUSE_OP_MUL,
 };
 
+#if defined(__riscv_v_intrinsic)
+// dst = rms_norm(src) * w, two passes: sum of squares, then scale and multiply.
+// Reading src twice beats the unfused pair, which writes norm(src) and reads it back.
+static inline void spx_rms_norm_mul_f32(int64_t n, float * dst, const float * src, const float * w, float eps) {
+    vfloat32m4_t acc = __riscv_vfmv_v_f_f32m4(0.0f, __riscv_vsetvlmax_e32m4());
+
+    for (int64_t i = 0; i < n; ) {
+        const size_t       vl = __riscv_vsetvl_e32m4(n - i);
+        const vfloat32m4_t v  = __riscv_vle32_v_f32m4(src + i, vl);
+        acc                   = __riscv_vfmacc_vv_f32m4(acc, v, v, vl);
+        i += (int64_t) vl;
+    }
+
+    const size_t vl1 = __riscv_vsetvlmax_e32m1();
+    vfloat32m1_t s   = __riscv_vfadd_vv_f32m1(__riscv_vget_v_f32m4_f32m1(acc, 0), __riscv_vget_v_f32m4_f32m1(acc, 1), vl1);
+    s                = __riscv_vfadd_vv_f32m1(s, __riscv_vget_v_f32m4_f32m1(acc, 2), vl1);
+    s                = __riscv_vfadd_vv_f32m1(s, __riscv_vget_v_f32m4_f32m1(acc, 3), vl1);
+    s                = __riscv_vfredusum_vs_f32m1_f32m1(s, __riscv_vfmv_v_f_f32m1(0.0f, vl1), vl1);
+
+    const float scale = 1.0f / sqrtf(__riscv_vfmv_f_s_f32m1_f32(s) / (float) n + eps);
+
+    for (int64_t i = 0; i < n; ) {
+        const size_t       vl = __riscv_vsetvl_e32m4(n - i);
+        vfloat32m4_t       v  = __riscv_vfmul_vf_f32m4(__riscv_vle32_v_f32m4(src + i, vl), scale, vl);
+        if (w) {
+            v = __riscv_vfmul_vv_f32m4(v, __riscv_vle32_v_f32m4(w + i, vl), vl);
+        }
+        __riscv_vse32_v_f32m4(dst + i, v, vl);
+        i += (int64_t) vl;
+    }
+}
+#endif
+
 template <ggml_rms_norm_fuse_op FUSE_OP>
 static void ggml_compute_forward_rms_norm_f32(
         const ggml_compute_params * params,
@@ -10073,14 +10106,98 @@ void ggml_compute_forward_ssm_conv(
 }
 
 // ggml_compute_forward_ssm_conv_state
+//
+// Short causal depthwise Conv1D over [retained conv state ++ current tokens], for the GDN (gated
+// delta net) family. The conv state is laid out as
+//
+//     [head_dim, head_num, conv_len, n_seqs]        (conv_len = d_conv - 1, head_dim innermost)
+//
+// so a conv "channel vector" is contiguous and both the state taps and the output vectorize with
+// UNIT stride (the old time-fastest layout needed a strided gather for the state). Because the
+// channel dim is contiguous, a channel count that is a multiple of the vector length needs no tail
+// handling and no padding.
+//
+// Decoding (n_t == 1) and prefill (n_t > 1) are separate sub-kernels: decode is a plain FIR over
+// the d_conv taps plus a one-tap state shift, prefill is a sliding window over [state ++ qkv].
+// Both fall back to the same scalar loop for layouts / d_conv the RVV paths do not cover.
+
+// Scalar fallback: any d_conv, any strides. `ir0`/`ir` are the channel block owned by this thread.
+static void ggml_compute_forward_ssm_conv_state_scalar(ggml_tensor * dst, const int ir0, const int ir) {
+    const ggml_tensor * state     = dst->src[0]; // [head_dim, head_num, conv_len, n_seqs]
+    const ggml_tensor * qkv       = dst->src[1]; // [n_t, d_inner, n_seqs]
+    const ggml_tensor * weight    = dst->src[2]; // [d_conv, d_inner]
+    const ggml_tensor * dst_state = dst->src[3]; // optional, same shape as state
+
+    const int nc      = weight->ne[0];
+    const int n_t     = dst->ne[1];
+    const int n_s     = dst->ne[2];
+
+    const int64_t nc1 = nc - 1;
+    const int64_t hd  = state->ne[0]; // head_dim
+
+    const size_t nb_d0 = dst->nb[0],   nb_d1 = dst->nb[1],   nb_d2 = dst->nb[2];
+    const size_t nb_s0 = state->nb[0], nb_s1 = state->nb[1], nb_s2 = state->nb[2], nb_s3 = state->nb[3];
+    const size_t nb_q0 = qkv->nb[0],   nb_q1 = qkv->nb[1],   nb_q2 = qkv->nb[2];
+    const size_t nb_w0 = weight->nb[0], nb_w1 = weight->nb[1];
+    const char * sp = (const char *) state->data;
+    const char * qp = (const char *) qkv->data;
+    const char * wp = (const char *) weight->data;
+    char *       dp = (char *) dst->data;
+
+    const bool apply_silu = ggml_get_op_params_i32(dst, 0) != 0;
+
+    // byte offset of channel `ch` of tap `pos` of the [state ++ qkv] sliding window
+    const auto sval_at = [&](int pos, int ch, int i3) -> float {
+        const int64_t h = ch / hd;
+        const int64_t d = ch % hd;
+        return (pos < nc1)
+            ? *(const float *) (sp + pos * nb_s2 + h * nb_s1 + d * nb_s0 + i3 * nb_s3)
+            : *(const float *) (qp + (pos - nc1) * nb_q0 + ch * nb_q1 + i3 * nb_q2);
+    };
+
+    for (int i3 = 0; i3 < n_s; ++i3) {
+        for (int i2 = 0; i2 < n_t; ++i2) {
+            for (int i1 = 0; i1 < ir; ++i1) {
+                const int ch = ir0 + i1;
+                float sumf = 0.0f;
+
+                for (int i0 = 0; i0 < nc; ++i0) {
+                    sumf += sval_at(i2 + i0, ch, i3) * *(const float *) (wp + i0 * nb_w0 + ch * nb_w1);
+                }
+                *(float *) (dp + ch * nb_d0 + i2 * nb_d1 + i3 * nb_d2) =
+                    apply_silu ? ggml_silu_f32(sumf) : sumf;
+            }
+        }
+
+        // Write the new conv state (the last conv_len taps of [state ++ qkv]) straight into the
+        // recurrent conv cache (dst_state), so the main path needs no ggml_cpy back to the cache.
+        if (dst_state) {
+            const size_t nb_ds0 = dst_state->nb[0], nb_ds1 = dst_state->nb[1],
+                         nb_ds2 = dst_state->nb[2], nb_ds3 = dst_state->nb[3];
+            char *       dsp    = (char *) dst_state->data;
+            for (int i1 = 0; i1 < ir; ++i1) {
+                const int ch = ir0 + i1;
+                const int64_t h = ch / hd;
+                const int64_t d = ch % hd;
+                for (int t = 0; t < nc1; ++t) {
+                    const int pos = n_t + t;
+                    const float sval = (pos < nc1)
+                        ? *(const float *) (sp + pos * nb_s2 + h * nb_s1 + d * nb_s0 + i3 * nb_s3)
+                        : *(const float *) (qp + (pos - nc1) * nb_q0 + ch * nb_q1 + i3 * nb_q2);
+                    *(float *) (dsp + t * nb_ds2 + h * nb_ds1 + d * nb_ds0 + i3 * nb_ds3) = sval;
+                }
+            }
+        }
+    }
+}
 
 static void ggml_compute_forward_ssm_conv_state_f32(
         const ggml_compute_params * params,
         ggml_tensor * dst) {
-    const ggml_tensor * state     = dst->src[0]; // [d_conv-1, d_inner, n_seqs]
+    const ggml_tensor * state     = dst->src[0]; // [head_dim, head_num, conv_len, n_seqs]
     const ggml_tensor * qkv       = dst->src[1]; // [n_t, d_inner, n_seqs]
     const ggml_tensor * weight    = dst->src[2]; // [d_conv, d_inner]
-    const ggml_tensor * dst_state = dst->src[3]; // optional [row_count, n_seqs]
+    const ggml_tensor * dst_state = dst->src[3]; // optional, same shape as state
 
     const int ith = params->ith;
     const int nth = params->nth;
@@ -10091,9 +10208,9 @@ static void ggml_compute_forward_ssm_conv_state_f32(
     const int n_s     = dst->ne[2];    // sequences in the batch
 
     GGML_ASSERT(dst->ne[0] == d_inner);
-    GGML_ASSERT(state->ne[0] == nc - 1);
-    GGML_ASSERT(state->ne[1] == d_inner);
-    GGML_ASSERT(state->ne[2] == n_s);
+    GGML_ASSERT(state->ne[0] * state->ne[1] == d_inner);
+    GGML_ASSERT(state->ne[2] == nc - 1);
+    GGML_ASSERT(state->ne[3] == n_s);
     GGML_ASSERT(qkv->ne[0] == n_t);
     GGML_ASSERT(qkv->ne[1] == d_inner);
     GGML_ASSERT(qkv->ne[2] == n_s);
@@ -10104,11 +10221,16 @@ static void ggml_compute_forward_ssm_conv_state_f32(
     const int ir1 = MIN(ir0 + dr, d_inner);
     const int ir  = ir1 - ir0;
 
-    const int64_t nc1 = nc - 1; // d_conv - 1
+    if (ir <= 0) {
+        return;
+    }
+
+    const int64_t nc1 = nc - 1;        // conv_len
+    const int64_t hd  = state->ne[0];  // head_dim
 
     // hoist strides/data out of the hot loops so the compiler can keep them in registers
     const size_t nb_d0 = dst->nb[0],   nb_d1 = dst->nb[1],   nb_d2 = dst->nb[2];
-    const size_t nb_s0 = state->nb[0], nb_s1 = state->nb[1], nb_s2 = state->nb[2];
+    const size_t nb_s0 = state->nb[0], nb_s1 = state->nb[1], nb_s2 = state->nb[2], nb_s3 = state->nb[3];
     const size_t nb_q0 = qkv->nb[0],   nb_q1 = qkv->nb[1],   nb_q2 = qkv->nb[2];
     const size_t nb_w0 = weight->nb[0], nb_w1 = weight->nb[1];
     const char * sp = (const char *) state->data;
@@ -10116,7 +10238,68 @@ static void ggml_compute_forward_ssm_conv_state_f32(
     const char * wp = (const char *) weight->data;
     char *       dp = (char *) dst->data;
 
+    const bool apply_silu = ggml_get_op_params_i32(dst, 0) != 0;
+
+    // Vectorized paths: one vector lane per CHANNEL. With the [.., head_dim, head_num] inner dims
+    // contiguous, a channel vector loads/stores with unit stride; only the time tap and the sequence
+    // need a stride. The d_conv taps of a channel vector come from one segment load (the weight is
+    // [d_conv, d_inner], tap fastest). ggml_v_silu_m2 keeps the fused activation bit-identical to
+    // the ggml_silu op it replaces. Falls through to the scalar loop for anything else.
 #if defined(__riscv_v_intrinsic)
+    if (__riscv_vlenb() == 32 && nc == 4 &&
+        nb_s0 == sizeof(float) && nb_s1 == (size_t) hd * sizeof(float) &&
+        nb_q1 == sizeof(float) && nb_d0 == sizeof(float)) {
+        const size_t nb_ds0 = dst_state ? dst_state->nb[0] : 0;
+        const size_t nb_ds2 = dst_state ? dst_state->nb[2] : 0;
+        const size_t nb_ds3 = dst_state ? dst_state->nb[3] : 0;
+        char *       dsp    = dst_state ? (char *) dst_state->data : nullptr;
+
+        if (n_t == 1) {
+            // ---- decode sub-kernel: FIR over the three retained taps + the new token, then shift
+            //      the state by one tap (dst = [state[1], state[2], qkv[0]] for d_conv == 4)
+            for (int i3 = 0; i3 < n_s; ++i3) {
+                const char * sp3 = sp + i3 * nb_s3;
+                const char * qp3 = qp + i3 * nb_q2;
+                char *       dp3 = dp + i3 * nb_d2;
+
+                for (int ch = ir0; ch < ir1; ) {
+                    const int vl = __riscv_vsetvl_e32m2(ir1 - ch);
+
+                    const vfloat32m2x4_t wt = __riscv_vlseg4e32_v_f32m2x4((const float *) (wp + ch * nb_w1), vl);
+                    const vfloat32m2_t w0 = __riscv_vget_v_f32m2x4_f32m2(wt, 0);
+                    const vfloat32m2_t w1 = __riscv_vget_v_f32m2x4_f32m2(wt, 1);
+                    const vfloat32m2_t w2 = __riscv_vget_v_f32m2x4_f32m2(wt, 2);
+                    const vfloat32m2_t w3 = __riscv_vget_v_f32m2x4_f32m2(wt, 3);
+
+                    const float * s0 = (const float *) (sp3 + 0 * nb_s2 + ch * sizeof(float));
+                    const float * s1 = (const float *) (sp3 + 1 * nb_s2 + ch * sizeof(float));
+                    const float * s2 = (const float *) (sp3 + 2 * nb_s2 + ch * sizeof(float));
+                    const float * q0 = (const float *) (qp3 + ch * nb_q1);
+
+                    const vfloat32m2_t v1 = __riscv_vle32_v_f32m2(s1, vl);
+                    const vfloat32m2_t v2 = __riscv_vle32_v_f32m2(s2, vl);
+                    const vfloat32m2_t v3 = __riscv_vle32_v_f32m2(q0, vl);
+
+                    vfloat32m2_t a = __riscv_vfmul_vv_f32m2(__riscv_vle32_v_f32m2(s0, vl), w0, vl);
+                    a = __riscv_vfmacc_vv_f32m2(a, v1, w1, vl);
+                    a = __riscv_vfmacc_vv_f32m2(a, v2, w2, vl);
+                    a = __riscv_vfmacc_vv_f32m2(a, v3, w3, vl);
+
+                    if (apply_silu) {
+                        a = ggml_v_silu_m2(a, vl);
+                    }
+                    __riscv_vse32_v_f32m2((float *) (dp3 + ch * nb_d0), a, vl);
+
+                    if (dsp) {
+                        char * ds = dsp + i3 * nb_ds3 + ch * nb_ds0;
+                        __riscv_vse32_v_f32m2((float *) (ds + 0 * nb_ds2), v1, vl);
+                        __riscv_vse32_v_f32m2((float *) (ds + 1 * nb_ds2), v2, vl);
+                        __riscv_vse32_v_f32m2((float *) (ds + 2 * nb_ds2), v3, vl);
+                    }
+                    ch += vl;
+                }
+            }
+        } else {
     // scalar force-switch for the A/B and as a safety fallback
     static int ssmconv_scalar = -1;
     if (ssmconv_scalar < 0) {
@@ -10130,15 +10313,11 @@ static void ggml_compute_forward_ssm_conv_state_f32(
     // sequential stream -- and vectorise the channel axis.
     const bool ssmconv_rvv = !ssmconv_scalar && nc == 4 && nb_d0 == sizeof(float) &&
                              nb_q1 == sizeof(float) && n_t > 3 && ir > 0;
-#else
-    const bool ssmconv_rvv = false;
-#endif
 
     for (int i3 = 0; i3 < n_s; ++i3) {
         for (int i2 = 0; i2 < n_t; ++i2) {
             float * x = (float *) (dp + ir0 * nb_d0 + i2 * nb_d1 + i3 * nb_d2);
 
-#if defined(__riscv_v_intrinsic)
             if (ssmconv_rvv && i2 >= 3) {
                 const size_t vlmax = __riscv_vsetvlmax_e32m2();
                 for (int c0 = 0; c0 < ir; c0 += (int) vlmax) {
@@ -10166,7 +10345,6 @@ static void ggml_compute_forward_ssm_conv_state_f32(
                 }
                 continue;
             }
-#endif
             for (int i1 = 0; i1 < ir; ++i1) {
                 float sumf = 0.0f;
 
@@ -10200,7 +10378,13 @@ static void ggml_compute_forward_ssm_conv_state_f32(
                 }
             }
         }
+        }
+        }
+        return;
     }
+#endif
+
+    ggml_compute_forward_ssm_conv_state_scalar(dst, ir0, ir);
 }
 
 void ggml_compute_forward_ssm_conv_state(
@@ -11395,6 +11579,35 @@ static inline float spx_gdn_dot_f32(int n, const float * a, const float * b) {
     return __riscv_vfmv_f_s_f32m1_f32(
         __riscv_vfredusum_vs_f32m4_f32m1(vacc, __riscv_vfmv_v_f_f32m1(0.0f, 1), vlmax));
 }
+
+// sum_k = <row, k> and sum_q = <row, q> in ONE traversal of the row (two independent accumulator
+// chains for ILP). Steps, tail handling and the final reduction match spx_gdn_dot_f32 exactly, so
+// both results are bit-identical to two separate dot_f32 calls - only the row load is shared.
+static inline void spx_gdn_dot2_f32(int n, const float * row, const float * k, const float * q,
+                                    float * sk, float * sq) {
+    const size_t vlmax = __riscv_vsetvlmax_e32m4();
+    vfloat32m4_t  ak    = __riscv_vfmv_v_f_f32m4(0.0f, vlmax);
+    vfloat32m4_t  aq    = __riscv_vfmv_v_f_f32m4(0.0f, vlmax);
+    int i = 0;
+    for (; i + (int) vlmax <= n; i += (int) vlmax) {
+        const vfloat32m4_t vr = __riscv_vle32_v_f32m4(row + i, vlmax);
+        const vfloat32m4_t vk = __riscv_vle32_v_f32m4(k + i, vlmax);
+        const vfloat32m4_t vq = __riscv_vle32_v_f32m4(q + i, vlmax);
+        ak = __riscv_vfmacc_vv_f32m4(ak, vr, vk, vlmax);
+        aq = __riscv_vfmacc_vv_f32m4(aq, vr, vq, vlmax);
+    }
+    if (i < n) {
+        const size_t vl = __riscv_vsetvl_e32m4(n - i);
+        const vfloat32m4_t vr = __riscv_vle32_v_f32m4(row + i, vl);
+        const vfloat32m4_t vk = __riscv_vle32_v_f32m4(k + i, vl);
+        const vfloat32m4_t vq = __riscv_vle32_v_f32m4(q + i, vl);
+        ak = __riscv_vfmacc_vv_f32m4(ak, vr, vk, vl);
+        aq = __riscv_vfmacc_vv_f32m4(aq, vr, vq, vl);
+    }
+    const vfloat32m1_t z = __riscv_vfmv_v_f_f32m1(0.0f, 1);
+    *sk = __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m4_f32m1(ak, z, vlmax));
+    *sq = __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m4_f32m1(aq, z, vlmax));
+}
 #else
 static inline void spx_gdn_mul_f32(int n, float * d, const float * a, const float * b) {
     ggml_vec_mul_f32(n, d, a, b);
@@ -11409,6 +11622,11 @@ static inline float spx_gdn_dot_f32(int n, const float * a, const float * b) {
     float s = 0.0f;
     ggml_vec_dot_f32(n, &s, 0, a, 0, b, 0, 1);
     return s;
+}
+static inline void spx_gdn_dot2_f32(int n, const float * row, const float * k, const float * q,
+                                    float * sk, float * sq) {
+    *sk = spx_gdn_dot_f32(n, row, k);
+    *sq = spx_gdn_dot_f32(n, row, q);
 }
 #endif
 
@@ -11458,11 +11676,15 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
     // per-seq stride in floats (seq s starts at state + s * seq_stride)
     const int64_t state_seq_stride = src_state->nb[3] / sizeof(float);
 
-    const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0);
+    // per-thread scratch: delta | sum_k | sum_q | (state_work when K > 1). The stride MUST match
+    // the ggml-cpu.c work_size estimate, or neighbouring threads silently overlap.
+    const int64_t per_thread = 3 * S_v + (K > 1 ? S_v * S_v : 0);
     const int ith = params->ith;
 
     float * delta       = (float *)params->wdata + ith * per_thread + CACHE_LINE_SIZE_F32;
-    float * state_work  = K > 1 ? (delta + S_v) : nullptr;
+    float * sum_k       = delta  + S_v;
+    float * sum_q       = sum_k  + S_v;
+    float * state_work  = K > 1 ? (sum_q + S_v) : nullptr;
 
     // output layout: [attn_scores | new_states]
     // attn_scores: S_v * H * n_tokens * n_seqs    floats
@@ -11536,21 +11758,29 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
                 spx_gdn_scale_f32((int) (S_v * S_v), s_out, expf(g_d[0]));
             }
 
-            // delta[j] = sum_i S[i][j] * k[i] = dot(row j of M, k)
+            // sum_k[j] = <row j, k> and sum_q[j] = <row j, q> in one pass over the (decayed) state
             for (int64_t j = 0; j < S_v; ++j) {
-                const float sum = spx_gdn_dot_f32((int) S_v, &s_out[j * S_v], k_d);
-                delta[j] = (v_d[j] - sum) * beta_val;
+                spx_gdn_dot2_f32((int) S_v, &s_out[j * S_v], k_d, q_d, &sum_k[j], &sum_q[j]);
             }
 
-            // outer product: S[i][j] += k[i] * delta[j] => M[j][i] += delta[j] * k[i]
+            // C = k . q is the same for every output column
+            const float C = spx_gdn_dot_f32((int) S_v, k_d, q_d);
+
+            // delta[j] = sum_i S[i][j] * k[i]  (the rank-1 coefficient)
+            for (int64_t j = 0; j < S_v; ++j) {
+                delta[j] = (v_d[j] - sum_k[j]) * beta_val;
+            }
+
+            // Output projection from the PRE-update state, via the algebraic identity
+            //     out = (S_old + k (x) delta)^T q = S_old^T q + delta * (k.q)
+            // so the projection does not depend on the rank-1 update below (it can overlap it).
+            for (int64_t j = 0; j < S_v; ++j) {
+                attn_data[j] = (sum_q[j] + delta[j] * C) * scale;
+            }
+
+            // outer product LAST: S[i][j] += k[i] * delta[j] => M[j][i] += delta[j] * k[i]
             for (int64_t j = 0; j < S_v; ++j) {
                 spx_gdn_mad_f32((int) S_v, &s_out[j * S_v], k_d, delta[j]);
-            }
-
-            // attn_out[j] = sum_i S[i][j] * q[i] = dot(row j of M, q)
-            for (int64_t j = 0; j < S_v; ++j) {
-                const float sum = spx_gdn_dot_f32((int) S_v, &s_out[j * S_v], q_d);
-                attn_data[j] = sum * scale;
             }
 
             attn_data += S_v * H; // advance to next token

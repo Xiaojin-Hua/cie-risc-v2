@@ -5707,8 +5707,11 @@ struct ggml_tensor * ggml_ssm_conv_state(
         struct ggml_tensor  * state,
         struct ggml_tensor  * qkv,
         struct ggml_tensor  * c,
-        struct ggml_tensor  * dst_state) {
-    GGML_ASSERT(ggml_is_3d(state));
+        struct ggml_tensor  * dst_state,
+        bool                  apply_silu) {
+    // state / dst_state: [head_dim, head_num, conv_len, n_seqs]; the channel dim (head_dim within a
+    // head) is innermost so the kernels vectorize with unit stride
+    GGML_ASSERT(state->ne[3] == qkv->ne[2]);
     GGML_ASSERT(ggml_is_3d(qkv));
     GGML_ASSERT(ggml_is_matrix(c));
 
@@ -5717,11 +5720,14 @@ struct ggml_tensor * ggml_ssm_conv_state(
     const int64_t n_t     = qkv->ne[0]; // tokens per sequence
     const int64_t n_s     = qkv->ne[2];
 
-    GGML_ASSERT(state->ne[0] == d_conv - 1);
-    GGML_ASSERT(state->ne[1] == d_inner);
-    GGML_ASSERT(state->ne[2] == n_s);
+    GGML_ASSERT(state->ne[2] == d_conv - 1);          // conv_len = retained taps
+    GGML_ASSERT(state->ne[0] * state->ne[1] == d_inner);
+    GGML_ASSERT(state->ne[3] == n_s);
     GGML_ASSERT(qkv->ne[1] == d_inner);
     GGML_ASSERT(n_t >= 1);
+    if (dst_state) {
+        GGML_ASSERT(ggml_are_same_shape(state, dst_state));
+    }
 
     struct ggml_tensor * result = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, d_inner, n_t, n_s);
 
@@ -5730,6 +5736,8 @@ struct ggml_tensor * ggml_ssm_conv_state(
     result->src[1] = qkv;
     result->src[2] = c;
     result->src[3] = dst_state;
+
+    ggml_set_op_params_i32(result, 0, apply_silu ? 1 : 0);
 
     return result;
 }
@@ -6424,6 +6432,7 @@ struct ggml_tensor * ggml_gated_delta_net(
         struct ggml_tensor  * beta,
         struct ggml_tensor  * state,
         struct ggml_tensor  * dst_state,
+        struct ggml_tensor  * log,
         int64_t               K) {
     GGML_ASSERT(ggml_is_contiguous_rows(q));
     GGML_ASSERT(ggml_is_contiguous_rows(k));
@@ -6431,6 +6440,7 @@ struct ggml_tensor * ggml_gated_delta_net(
     GGML_ASSERT(ggml_is_contiguous(g));
     GGML_ASSERT(ggml_is_contiguous(beta));
     GGML_ASSERT(ggml_is_contiguous(state));
+    GGML_ASSERT(log == NULL || ggml_is_contiguous(log));
 
     GGML_ASSERT(q->type == GGML_TYPE_F32);
     GGML_ASSERT(k->type == GGML_TYPE_F32);
@@ -6468,6 +6478,7 @@ struct ggml_tensor * ggml_gated_delta_net(
     result->src[4] = beta;
     result->src[5] = state;
     result->src[6] = dst_state;
+    result->src[7] = log;
 
     return result;
 }
