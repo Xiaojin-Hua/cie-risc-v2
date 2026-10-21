@@ -113,6 +113,10 @@ public:
     std::vector<ggml_tensor *> s_l;
     // a second conv history that must stay replicated across devices, so it cannot share the r row
     std::vector<ggml_tensor *> p_l;
+    // DeltaLog for the GDN decode path (see GDN递归状态延迟物化.md): the pending-update log that
+    // accompanies the recurrent state, so it is saved/restored with the cache. Empty when unused.
+    std::vector<ggml_tensor *> s_log_l;
+    int64_t s_log_floats = 0;
 
 private:
     //const llama_model & model;
@@ -173,6 +177,8 @@ public:
 
     ggml_tensor * get_r_l(int32_t il) const;
     ggml_tensor * get_s_l(int32_t il) const;
+    // DeltaLog buffer for GDN decode; nullptr when the model does not use it
+    ggml_tensor * get_s_log_l(int32_t il) const;
     ggml_tensor * get_p_l(int32_t il) const;
 
     int32_t s_copy(int i) const;

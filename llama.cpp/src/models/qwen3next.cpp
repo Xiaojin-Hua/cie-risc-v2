@@ -462,16 +462,14 @@ ggml_tensor * llama_model_qwen3next::graph::build_layer_attn_linear(
     const int64_t conv_kernel_size = conv_kernel->ne[0];
     const int64_t conv_channels    = d_inner + 2 * hparams.ssm_n_group * hparams.ssm_d_state;
 
-    auto [qkv_transposed, conv_states, conv_dst_state] = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
+    auto [qkv_transposed, conv_states, conv_dst_state] = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, hparams.ssm_d_state, il);
 
     ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
     state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
     cb(state, "state_predelta", il);
 
-    ggml_tensor * conv_output_proper = ggml_ssm_conv_state(ctx0, conv_states, qkv_transposed, conv_kernel, conv_dst_state);
-    cb(conv_output_proper, "conv_output_raw", il);
-
-    ggml_tensor * conv_output_silu = ggml_silu(ctx0, conv_output_proper);
+    // the conv kernel applies silu in its epilogue, so no separate ggml_silu node is needed
+    ggml_tensor * conv_output_silu = ggml_ssm_conv_state(ctx0, conv_states, qkv_transposed, conv_kernel, conv_dst_state, true);
     cb(conv_output_silu, "conv_output_silu", il);
 
     ggml_tensor * conv_qkv_mix = conv_output_silu;

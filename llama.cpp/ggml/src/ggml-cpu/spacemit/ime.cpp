@@ -700,13 +700,16 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 
         if (gemm_m == 1 && NB_COLS == 16 && ime1_int4 && vlen256 &&
             (mm_path == 'd' || mm_path == 'D')) {
-            const int64_t n_groups = gemm_n / NB_COLS;
+            // ceil, not floor: NB_COLS need not divide gemm_n (e.g. 2048 % 20 == 8); the last
+            // group is narrower and the M=1 kernel's tail path writes only the valid columns.
+            const int64_t n_groups = spacemit_kernels::div_round_up(gemm_n, NB_COLS);
             const int64_t gpt      = spacemit_kernels::div_round_up(n_groups, nth);
             const int64_t g_start  = std::min(static_cast<int64_t>(ith) * gpt, n_groups);
             const int64_t g_end    = std::min(g_start + gpt, n_groups);
 
             for (int64_t g = g_start; g < g_end; ++g) {
                 const int64_t n_off = g * NB_COLS;
+                const int64_t n_cnt = std::min<int64_t>(NB_COLS, gemm_n - n_off);
                 uint8_t *     b_col = reinterpret_cast<uint8_t *>(w_data) + n_off * row_stride_b;
                 uint8_t *     b_zp  = block_type_has_zp<BLOC_TYPE>() ? b_col : nullptr;
 

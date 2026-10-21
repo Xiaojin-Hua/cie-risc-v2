@@ -3050,7 +3050,8 @@ struct ggml_cplan ggml_graph_plan(
                     {
                         const int64_t S_v = node->src[2]->ne[0];
                         const int64_t K   = ggml_get_op_params_i32(node, 0);
-                        const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0);
+                        // delta | sum_k | sum_q | (state_work when K > 1); must match ops.cpp
+                        const int64_t per_thread = 3 * S_v + (K > 1 ? S_v * S_v : 0);
                         cur = per_thread * sizeof(float) * n_tasks;
                     } break;
                 case GGML_OP_COUNT:
@@ -3322,7 +3323,7 @@ static void ggml_spx_op_stats_dump(void) {
             }
         }
         fprintf(stderr, "[spxop] ===== stage %s : total %ld us =====\n", stages[s], (long) total);
-        for (int a = 0; a < cnt && a < 15; a++) {
+        for (int a = 0; a < cnt && a < 40; a++) {
             int o = idx[a];
             fprintf(stderr, "[spxop] type %-18s total %10ld us  n %6ld  avg %8ld us  %5.1f%%\n",
                     ggml_op_name((enum ggml_op) o), (long) g_spx_op_us[s][o], (long) g_spx_op_n[s][o],
@@ -3358,7 +3359,7 @@ static void ggml_spx_op_stats_dump(void) {
             }
         }
         fprintf(stderr, "[spxop]   -- top nodes --\n");
-        for (int a = 0; a < ncnt && a < 25; a++) {
+        for (int a = 0; a < ncnt && a < SPX_NAME_SLOTS; a++) {
             struct spx_name_stat * e = &g_spx_names[s][nidx[a]];
             fprintf(stderr, "[spxop] name %-28s %-16s total %10ld us  n %6ld  avg %8ld us\n",
                     e->name, ggml_op_name((enum ggml_op) e->op), (long) e->us, (long) e->n,

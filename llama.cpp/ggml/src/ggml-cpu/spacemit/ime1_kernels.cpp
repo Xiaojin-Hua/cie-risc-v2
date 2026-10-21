@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <stdexcept>
 
 #if !defined(__riscv_v) || !defined(__riscv_v_intrinsic)
@@ -285,36 +287,41 @@ void quantize_a_4row_i8(size_t BlkLen, const float * A, size_t CountK, uint8_t *
 // O(K*N) GEMM.
 static void quantize_a_row_i8_ref(size_t BlkLen, const float * A, size_t CountK, uint8_t * QuantA) {
     const float  range_max_reciprocal = 1.0f / ((1 << 7) - 1);
-    const float  fone                 = 1.0f;
     const size_t nblk                 = (CountK + BlkLen - 1) / BlkLen;
+    const size_t vmax                 = __riscv_vsetvlmax_e32m8();
 
     for (size_t b = 0; b < nblk; ++b) {
-        const size_t off = b * BlkLen;
-        const size_t n   = (off + BlkLen <= CountK) ? BlkLen : (CountK - off);
+        const size_t  off = b * BlkLen;
+        const size_t  n   = (off + BlkLen <= CountK) ? BlkLen : (CountK - off);
+        const float * src = A + off;
+        uint8_t *     dst = QuantA + b * (sizeof(float) + BlkLen);
 
-        float amax = 0.0f;
-        for (size_t i = 0; i < n; ++i) {
-            const float v = fabsf(A[off + i]);
-            if (v > amax) {
-                amax = v;
-            }
+        vfloat32m8_t mx = __riscv_vfmv_v_f_f32m8(0.0f, vmax);
+        for (size_t k = 0; k < n;) {
+            const size_t vl = __riscv_vsetvl_e32m8(n - k);
+            const vfloat32m8_t x = __riscv_vle32_v_f32m8(src + k, vl);
+            mx = __riscv_vfmax_vv_f32m8_tu(mx, mx, __riscv_vfabs_v_f32m8(x, vl), vl);
+            k += vl;
         }
+        const float amax =
+            __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredmax_vs_f32m8_f32m1(mx, __riscv_vfmv_v_f_f32m1(0.0f, 1), vmax));
 
         const float scale = amax * range_max_reciprocal;
-        const float rep   = scale ? fone / scale : 0.0f;
-
-        uint8_t * dst = QuantA + b * (sizeof(float) + BlkLen);
+        const float rep   = scale ? 1.0f / scale : 0.0f;
         memcpy(dst, &scale, sizeof(float));
 
         int8_t * q = reinterpret_cast<int8_t *>(dst + sizeof(float));
-        for (size_t i = 0; i < n; ++i) {
-            long v = lrintf(A[off + i] * rep);
-            if (v >  127) { v =  127; }
-            if (v < -128) { v = -128; }
-            q[i] = static_cast<int8_t>(v);
+        for (size_t k = 0; k < n;) {
+            const size_t vl = __riscv_vsetvl_e32m8(n - k);
+            const vfloat32m8_t x = __riscv_vle32_v_f32m8(src + k, vl);
+            const vint32m8_t   i = __riscv_vfcvt_x_f_v_i32m8(__riscv_vfmul_vf_f32m8(x, rep, vl), vl);
+            const vint16m4_t   h = __riscv_vnclip_wx_i16m4(i, 0, 0, vl);
+            const vint8m2_t    c = __riscv_vnclip_wx_i8m2(h, 0, 0, vl);
+            __riscv_vse8_v_i8m2(q + k, c, vl);
+            k += vl;
         }
-        for (size_t i = n; i < BlkLen; ++i) {
-            q[i] = 0;
+        for (size_t t = n; t < BlkLen; ++t) {
+            q[t] = 0;
         }
     }
 }

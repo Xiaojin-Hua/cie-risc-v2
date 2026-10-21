@@ -378,6 +378,7 @@ std::pair<ggml_tensor *, ggml_tensor *> llm_build_delta_net_base::build_delta_ne
         ggml_tensor * b,
         ggml_tensor * s,
         ggml_tensor * dst_state,
+        ggml_tensor * s_log,
         int           il) {
     const int64_t S_k      = q->ne[0];
     const int64_t H_k      = q->ne[1];
@@ -400,7 +401,9 @@ std::pair<ggml_tensor *, ggml_tensor *> llm_build_delta_net_base::build_delta_ne
     GGML_ASSERT(s->ne[0] == S_v && s->ne[1] == S_v && s->ne[2] == H_v      && s->ne[3] == n_seqs);
 
     // K=1: output carries the final state only. state s is 4D [S_v, S_v, H_v, n_seqs].
-    ggml_tensor * result = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, dst_state, /*K=*/1);
+    ggml_tensor * result = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, dst_state, s_log, /*K=*/1);
+    // the two views below are free, so name the op itself to keep it attributable to a layer
+    cb(result, "gdn", il);
     if (n_tokens == 1) {
         res->add_fused_node({LLM_FUSED_OP_GDN_AR, result, il});
     } else {
@@ -431,18 +434,19 @@ std::pair<ggml_tensor *, ggml_tensor *> llm_build_delta_net_base::build_delta_ne
         ggml_tensor * b,
         ggml_tensor * s,
         ggml_tensor * dst_state,
+        ggml_tensor * s_log,
         int           il) {
     const int64_t n_seq_tokens = q->ne[2];
 
     if (n_seq_tokens == 1) {
         if (cparams.fused_gdn_ar) {
-            return build_delta_net_fused(q, k, v, g, b, s, dst_state, il);
+            return build_delta_net_fused(q, k, v, g, b, s, dst_state, s_log, il);
         }
         return build_delta_net_autoregressive(q, k, v, g, b, s, il);
     }
 
     if (cparams.fused_gdn_ch) {
-        return build_delta_net_fused(q, k, v, g, b, s, dst_state, il);
+        return build_delta_net_fused(q, k, v, g, b, s, dst_state, nullptr, il);
     }
 
     return build_delta_net_chunking(q, k, v, g, b, s, il);
@@ -454,18 +458,24 @@ std::tuple<ggml_tensor *, ggml_tensor *, ggml_tensor *> llm_build_delta_net_base
         ggml_tensor *        qkv_mixed,
         int64_t              conv_kernel_size,
         int64_t              conv_channels,
+        int64_t              head_dim,
         int                  il) {
     const auto * mctx_cur = inp->mctx;
 
     const auto kv_head  = mctx_cur->get_head();
     const auto mem_size = mctx_cur->get_size();
 
-    const int64_t n_seqs = ubatch.n_seqs;
+    const int64_t n_seqs   = ubatch.n_seqs;
+    const int64_t conv_len = conv_kernel_size - 1;
+    const int64_t head_num = conv_channels / head_dim;
+    GGML_ASSERT(head_num * head_dim == conv_channels);
 
     ggml_tensor * conv_states = build_rs(inp, conv_states_all, hparams.n_embd_r(), n_seqs);
     cb(conv_states, "conv_states", il);
 
-    conv_states = ggml_reshape_3d(ctx0, conv_states, conv_kernel_size - 1, conv_channels, n_seqs);
+    // [num_blocks, conv_len, head_num, head_dim], head_dim innermost: the conv channel dim is
+    // contiguous, so the conv kernels read/write it with unit stride and need no padding.
+    conv_states = ggml_reshape_4d(ctx0, conv_states, head_dim, head_num, conv_len, n_seqs);
     cb(conv_states, "conv_states_reshaped", il);
 
     ggml_tensor * qkv_transposed = ggml_transpose(ctx0, qkv_mixed);
@@ -482,7 +492,7 @@ std::tuple<ggml_tensor *, ggml_tensor *, ggml_tensor *> llm_build_delta_net_base
     cb(qkv_transposed, "qkv_mixed_transposed", il);
 
     const int64_t n_t       = qkv_transposed->ne[0];
-    const int64_t row_count = (conv_kernel_size - 1) * conv_channels;
+    const int64_t row_count = conv_len * conv_channels;
     const size_t  row_size  = ggml_row_size(conv_states_all->type, row_count);
 
     ggml_tensor * dst_state = nullptr;
@@ -491,9 +501,11 @@ std::tuple<ggml_tensor *, ggml_tensor *, ggml_tensor *> llm_build_delta_net_base
         // The conv kernel (ggml_ssm_conv_state) writes the new conv state directly into this view
         // of conv_states_all, so no ggml_cpy back to the cache is needed on the main path.
         dst_state =
-            ggml_view_2d(ctx0, conv_states_all,
-                    row_count, n_seqs, conv_states_all->nb[1],
-                    kv_head * row_size);
+            ggml_reshape_4d(ctx0,
+                ggml_view_2d(ctx0, conv_states_all,
+                        row_count, n_seqs, conv_states_all->nb[1],
+                        kv_head * row_size),
+                head_dim, head_num, conv_len, n_seqs);
         cb(dst_state, "conv_state_update", il);
     } else {
         // [TAG_RECURRENT_ROLLBACK_SPLITS]
@@ -501,25 +513,29 @@ std::tuple<ggml_tensor *, ggml_tensor *, ggml_tensor *> llm_build_delta_net_base
         //   the same ubatch, which `split_equal()` guarantees via its n_keep_tail argument.
         // Keep the concat-based logic for this speculative-decoding path only.
 
-        ggml_tensor * conv_input = ggml_concat(ctx0, conv_states, ggml_cont(ctx0, qkv_transposed), 0);
+        // concat over the conv_len dim so the sliding window still sees [state ++ new tokens]
+        ggml_tensor * qkv_4d = ggml_reshape_4d(ctx0, ggml_cont(ctx0, qkv_transposed), head_dim, head_num, n_t, n_seqs);
+        ggml_tensor * conv_input = ggml_concat(ctx0, conv_states, qkv_4d, 2);
 
         const int64_t K = (int64_t) cparams.n_rs_seq + 1;
 
         for (int64_t t = 1; t <= K; ++t) {
-            const int64_t s_idx  = std::max<int64_t>(0, conv_input->ne[0] - conv_states->ne[0] - K + t);
+            const int64_t s_idx  = std::max<int64_t>(0, conv_input->ne[2] - conv_len - K + t);
             const int64_t s_slot = K - t;
 
             ggml_tensor * conv_state_last =
-                ggml_view_3d(ctx0, conv_input,
-                        conv_kernel_size - 1, conv_channels, n_seqs,
-                        conv_input->nb[1], conv_input->nb[2],
-                        ggml_row_size(conv_input->type, s_idx));
+                ggml_view_4d(ctx0, conv_input,
+                        head_dim, head_num, conv_len, n_seqs,
+                        conv_input->nb[1], conv_input->nb[2], conv_input->nb[3],
+                        (int64_t) conv_input->nb[2] * s_idx);
 
             ggml_tensor * conv_state_update =
-                ggml_view_2d(ctx0,
-                        conv_states_all, row_count, n_seqs,
-                        conv_states_all->nb[1],
-                        (s_slot * mem_size + kv_head) * row_size);
+                ggml_reshape_4d(ctx0,
+                    ggml_view_2d(ctx0,
+                            conv_states_all, row_count, n_seqs,
+                            conv_states_all->nb[1],
+                            (s_slot * mem_size + kv_head) * row_size),
+                    head_dim, head_num, conv_len, n_seqs);
 
             ggml_build_forward_expand(gf, ggml_cpy(ctx0, conv_state_last, conv_state_update));
         }
@@ -555,7 +571,15 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         ggml_tensor * dst_state = ggml_view_2d(ctx0, ssm_states_all, hparams.n_embd_s(), n_seqs,
                 ssm_states_all->nb[1], kv_head * hparams.n_embd_s() * ggml_element_size(ssm_states_all));
 
-        auto attn_out = build_delta_net(q, k, v, g, b, s, dst_state, il);
+        // DeltaLog buffer for the decode path (null when the model has none)
+        ggml_tensor * s_log_all = mctx_cur->get_s_log_l(il);
+        ggml_tensor * s_log = nullptr;
+        if (s_log_all != nullptr) {
+            s_log = ggml_view_2d(ctx0, s_log_all, s_log_all->ne[0], n_seqs,
+                    s_log_all->nb[1], kv_head * s_log_all->nb[1]);
+        }
+
+        auto attn_out = build_delta_net(q, k, v, g, b, s, dst_state, s_log, il);
         ggml_tensor * output = attn_out.first;
         cb(output, "attn_output", il);
 
@@ -566,7 +590,7 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
     const int64_t K = cparams.n_rs_seq + 1;
 
     // state s is 4D [S_v, S_v, H_v, n_seqs]; K snapshot slots are written into the output.
-    ggml_tensor * gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, nullptr, K);
+    ggml_tensor * gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, nullptr, nullptr, K);
     if (n_seq_tokens > 1) {
         res->add_fused_node({LLM_FUSED_OP_GDN_CH, gdn_out, il});
     } else {

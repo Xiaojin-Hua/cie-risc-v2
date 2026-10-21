@@ -65,6 +65,7 @@ struct llm_build_delta_net_base : public llm_graph_context {
                 ggml_tensor * b,
                 ggml_tensor * s,
                 ggml_tensor * dst_state,
+                ggml_tensor * s_log,
                         int   il);
 
     // choose one of two implementations above based on the number of tokens
@@ -76,12 +77,15 @@ struct llm_build_delta_net_base : public llm_graph_context {
                 ggml_tensor * b,
                 ggml_tensor * s,
                 ggml_tensor * dst_state,
+                ggml_tensor * s_log,
                         int   il);
 
     // read conv state from cache, write back the new state, and return the conv inputs
     // plus the state destination view: {qkv_mixed_transposed, conv_states, dst_state}.
-    // dst_state is the [row_count, n_seqs] view of conv_states_all (main path, n_rs_seq==0) the
-    // conv kernel writes the new state into directly; nullptr on the rollback path.
+    // The conv state is [head_dim, head_num, conv_len, n_seqs] with head_dim innermost, so the conv
+    // channel dim is contiguous; head_num * head_dim == conv_channels, conv_len == conv_kernel_size-1.
+    // dst_state is the same 4-D view of conv_states_all (main path, n_rs_seq==0) the conv kernel
+    // writes the new state into directly; nullptr on the rollback path.
     // qkv_mixed: (qkv_dim, n_seq_tokens, n_seqs)
     std::tuple<ggml_tensor *, ggml_tensor *, ggml_tensor *> build_conv_state(
             llm_graph_input_rs * inp,
@@ -89,6 +93,7 @@ struct llm_build_delta_net_base : public llm_graph_context {
             ggml_tensor *        qkv_mixed,
             int64_t              conv_kernel_size,
             int64_t              conv_channels,
+            int64_t              head_dim,
             int                  il);
 
     // run delta-net attention and write the new recurrent state(s) back to ssm_states_all
