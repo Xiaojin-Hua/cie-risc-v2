@@ -4,7 +4,7 @@
 
 | 目录 | 作用 |
 |---|---|
-| `tools/` | 权重转化：任意 HF/高精度 GGUF → 板端 `Q4_0_K128` GGUF（一键） |
+| `tools/weight_transfer/` | 权重转化：任意 HF/高精度 GGUF → 板端 `Q4_0_K128` GGUF（一键） |
 | `tools/ced/` | CED（Cross-layer Encoder-Decoder）K/V 投影的训练、导出与校验 |
 
 ---
@@ -15,7 +15,7 @@
 
 ```bash
 export LLAMA_QUANTIZE=/path/to/llama.cpp/build/bin/llama-quantize   # 或设 LLAMA_ROOT
-./tools/ckpt_transfer.sh <source_path> <output_path>
+./tools/weight_transfer/ckpt_transfer.sh <source_path> <output_path>
 ```
 
 * `<source_path>`：HF 模型目录（`config.json` + `*.safetensors`），或**高精度** GGUF（f16 / bf16 / q8_0）
@@ -63,7 +63,7 @@ export LLAMA_QUANTIZE=/path/to/llama.cpp/build/bin/llama-quantize   # 或设 LLA
 自检（会打印每个类型的张量数，布局不符返回非 0）：
 
 ```bash
-python3 tools/check_k128.py out.gguf
+python3 tools/weight_transfer/check_k128.py out.gguf
 #   Q4_0_K128 (44) : 248      <- 每个可量化张量
 #   Q4_K      (12) : 1        <- output.weight
 #   F32        (0) : 177      <- norm/bias
