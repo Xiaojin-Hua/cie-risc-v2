@@ -10265,11 +10265,13 @@ static void ggml_compute_forward_ssm_conv_state_f32(
                 for (int ch = ir0; ch < ir1; ) {
                     const int vl = __riscv_vsetvl_e32m2(ir1 - ch);
 
-                    const vfloat32m2x4_t wt = __riscv_vlseg4e32_v_f32m2x4((const float *) (wp + ch * nb_w1), vl);
-                    const vfloat32m2_t w0 = __riscv_vget_v_f32m2x4_f32m2(wt, 0);
-                    const vfloat32m2_t w1 = __riscv_vget_v_f32m2x4_f32m2(wt, 1);
-                    const vfloat32m2_t w2 = __riscv_vget_v_f32m2x4_f32m2(wt, 2);
-                    const vfloat32m2_t w3 = __riscv_vget_v_f32m2x4_f32m2(wt, 3);
+                    // weight is [d_conv, d_inner]: taps are contiguous *within a row*,
+                    // channels are nb_w1 apart -- a segment load assumes channel-major.
+                    const float * wb = (const float *) (wp + ch * nb_w1);
+                    const vfloat32m2_t w0 = __riscv_vlse32_v_f32m2(wb + 0 * nb_w0 / sizeof(float), (ptrdiff_t) nb_w1, vl);
+                    const vfloat32m2_t w1 = __riscv_vlse32_v_f32m2(wb + 1 * nb_w0 / sizeof(float), (ptrdiff_t) nb_w1, vl);
+                    const vfloat32m2_t w2 = __riscv_vlse32_v_f32m2(wb + 2 * nb_w0 / sizeof(float), (ptrdiff_t) nb_w1, vl);
+                    const vfloat32m2_t w3 = __riscv_vlse32_v_f32m2(wb + 3 * nb_w0 / sizeof(float), (ptrdiff_t) nb_w1, vl);
 
                     const float * s0 = (const float *) (sp3 + 0 * nb_s2 + ch * sizeof(float));
                     const float * s1 = (const float *) (sp3 + 1 * nb_s2 + ch * sizeof(float));
@@ -10341,6 +10343,9 @@ static void ggml_compute_forward_ssm_conv_state_f32(
                             __riscv_vle32_v_f32m2((const float *) (q0 + 3 * nb_q0), vl),
                             __riscv_vlse32_v_f32m2((const float *) (wp + 3 * nb_w0 + (size_t) ch * nb_w1),
                                                    (ptrdiff_t) nb_w1, vl), vl), vl);
+                    if (apply_silu) {
+                        acc = ggml_v_silu_m2(acc, vl);
+                    }
                     __riscv_vse32_v_f32m2(x + c0, acc, vl);
                 }
                 continue;
@@ -10350,31 +10355,36 @@ static void ggml_compute_forward_ssm_conv_state_f32(
 
                 for (int i0 = 0; i0 < nc; ++i0) {
                     const int pos = i2 + i0;
+                    const int64_t hh = (ir0 + i1) / hd;
+                    const int64_t dd = (ir0 + i1) % hd;
                     const float sval = (pos < nc1)
-                        ? *(const float *) (sp + pos * nb_s0 + (ir0 + i1) * nb_s1 + i3 * nb_s2)
+                        ? *(const float *) (sp + pos * nb_s2 + hh * nb_s1 + dd * nb_s0 + i3 * nb_s3)
                         : *(const float *) (qp + (pos - nc1) * nb_q0 + (ir0 + i1) * nb_q1 + i3 * nb_q2);
                     const float wval = *(const float *) (wp + i0 * nb_w0 + (ir0 + i1) * nb_w1);
 
                     sumf += sval * wval;
                 }
-                x[i1] = sumf;
+                x[i1] = apply_silu ? ggml_silu_f32(sumf) : sumf;
             }
         }
 
         // Write the new conv state (the last d_conv-1 taps of [state ++ qkv]) directly into the
         // recurrent conv cache (dst_state), avoiding a separate ggml_cpy back to conv_states_all.
-        // Cache row layout is [time (d_conv-1) fastest, channel].
+        // Cache row layout is [head_dim, head_num, conv_len, n_seqs] (channel innermost).
         if (dst_state) {
             const size_t nb_ds0 = dst_state->nb[0], nb_ds1 = dst_state->nb[1];
+            const size_t nb_ds2 = dst_state->nb[2], nb_ds3 = dst_state->nb[3];
             char *       dsp    = (char *) dst_state->data;
             for (int i1 = 0; i1 < ir; ++i1) {
                 const int ch = ir0 + i1;
                 for (int t = 0; t < nc1; ++t) {
                     const int pos = n_t + t;
                     const float sval = (pos < nc1)
-                        ? *(const float *) (sp + pos * nb_s0 + ch * nb_s1 + i3 * nb_s2)
+                        ? *(const float *) (sp + pos * nb_s2 + (ch / hd) * nb_s1 +
+                                            (ch % hd) * nb_s0 + i3 * nb_s3)
                         : *(const float *) (qp + (pos - nc1) * nb_q0 + ch * nb_q1 + i3 * nb_q2);
-                    *(float *) (dsp + (t + ch * nc1) * nb_ds0 + i3 * nb_ds1) = sval;
+                    *(float *) (dsp + t * nb_ds2 + (ch / hd) * nb_ds1 +
+                                     (ch % hd) * nb_ds0 + i3 * nb_ds3) = sval;
                 }
             }
         }
