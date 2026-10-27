@@ -89,6 +89,11 @@ void ggml_compute_forward_leaky_relu(const struct ggml_compute_params * params, 
 void ggml_compute_forward_tri(const struct ggml_compute_params * params, struct ggml_tensor * dst);
 void ggml_compute_forward_fill(const struct ggml_compute_params * params, struct ggml_tensor * dst);
 void ggml_compute_forward_flash_attn_ext(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// Same tiled algorithm, but K_f32/V32 (2*KV_TILE_SZ*DK floats) come from |tcm_kv| instead of the
+// wdata scratch. nullptr is identical to the plain tiled path.
+void ggml_compute_forward_flash_attn_ext_tiled_tcm(
+        const struct ggml_compute_params * params, struct ggml_tensor * dst, int ir0, int ir1, float * tcm_kv);
+
 void ggml_compute_forward_flash_attn_back(
         const struct ggml_compute_params * params,
         const bool masked,

@@ -1395,9 +1395,12 @@ class tensor_traits_common : public tensor_traits_base {
                     const int64_t kv_alloc = (neq1 >= GGML_FA_TILE_KV)
                                            ? ((nek1 + GGML_FA_TILE_KV - 1) / GGML_FA_TILE_KV) * GGML_FA_TILE_KV
                                            : (int64_t) GGML_FA_TILE_KV;
+                    const int64_t n_blocks = kv_alloc / GGML_FA_TILE_KV;
+                    // + FlashPrefill scratch: pooled keys [n_blocks][DK], per-block max/score, indices
                     size_t prefill = sizeof(float) *
                                      (GGML_FA_TILE_Q * DK + 2 * GGML_FA_TILE_Q * GGML_FA_TILE_KV + GGML_FA_TILE_Q * DV +
-                                      kv_alloc * DV + kv_alloc * DK) *
+                                      kv_alloc * DV + kv_alloc * DK + n_blocks * DK + 3 * n_blocks +
+                                      CACHE_LINE_SIZE_F32) *
                                      n_tasks;
 
                     // Decode path: n_kv_chunks = n_tasks (one chunk per thread)
@@ -1633,31 +1636,59 @@ class tensor_traits_common : public tensor_traits_base {
         const bool supported_types = (q->type == GGML_TYPE_F32 && k->type == GGML_TYPE_F16 && v->type == GGML_TYPE_F16);
         const bool supported_shape = (DK > 0 && DK <= 128 && DV > 0 && DV <= 128);
         const bool supported_vlen  = (__riscv_vlenb() == 128);
-
-        static const bool fa_probe_on = (getenv("LLAMA_FA_PROBE") != nullptr);
+        // TCM path: same tiled algorithm, but the hoisted K_f32/V32 (2*kv_alloc*DK floats) are
+        // staged in the per-core TCM instead of DDR. No numerics change (fp16/f32 RVV only).
+        // TCM is REQUIRED for this shape (set GGML_SPACEMIT_FA_TCM_FORCE=0 to allow a fallback);
+        // when the TCM exists but is too small for the whole hoisted K/V (long context), fall
+        // back to DDR staging instead of overrunning the buffer.
+        constexpr int64_t FA_KV_TILE = ggml_fa_tile_config::KV;
+        const int64_t fa_kv_alloc = ((nek1 + FA_KV_TILE - 1) / FA_KV_TILE) * FA_KV_TILE;
+        const int64_t     fa_tcm_bytes = 2 * fa_kv_alloc * DK * (int64_t) sizeof(float);
+        const bool fa_tcm_shape = supported_prec && supported_types && DK == 256 && DV == 256 &&
+                                  __riscv_vlenb() == 32 && !params->use_ref &&
+                                  dst->src[3] != nullptr && dst->src[4] == nullptr &&
+                                  neq1 >= ggml_fa_tile_config::Q && (int64_t) neq2 % nek2 == 0;
+        if (fa_tcm_shape) {
+            void * tcm = ggml::cpu::riscv64_spacemit::tls_context.tcm_buffer;
+            const size_t tcm_sz = ggml::cpu::riscv64_spacemit::tls_context.tcm_buffer_size;
+            if (tcm == nullptr) {
+                static std::atomic<int> warned{0};
+                const bool allow_fallback = getenv("GGML_SPACEMIT_FA_TCM_FORCE") != nullptr &&
+                                            atoi(getenv("GGML_SPACEMIT_FA_TCM_FORCE")) == 0;
+                if (warned.fetch_add(1) == 0) {
+                    fprintf(stderr, "[fa_tcm] TCM REQUIRED but unavailable (tcm_buffer=%p, size=%zu, need=%lld)\n",
+                            tcm, tcm_sz, (long long) fa_tcm_bytes);
+                }
+                if (!allow_fallback) {
+                    GGML_ABORT("[fa_tcm] flash attention requires TCM: make /dev/tcm readable "
+                               "(sudo chmod 666 /dev/tcm) or set GGML_SPACEMIT_FA_TCM_FORCE=0");
+                }
+            } else if ((int64_t) tcm_sz < fa_tcm_bytes) {
+                static std::atomic<int> warned{0};
+                if (warned.fetch_add(1) == 0) {
+                    fprintf(stderr, "[fa_tcm] hoisted K/V need %lld B > TCM %zu B; staging in DDR\n",
+                            (long long) fa_tcm_bytes, tcm_sz);
+                }
+            } else {
+                static std::atomic<int> logged{0};
+                if (logged.fetch_add(1) == 0) {
+                    fprintf(stderr, "[fa_tcm] flash attention staged in TCM: K_f32+V32 = %lld B from %zu B\n",
+                            (long long) fa_tcm_bytes, tcm_sz);
+                }
+                const int64_t nr = neq1 * neq2 * neq3;
+                const int64_t dr = (nr + params->nth - 1) / params->nth;
+                const int64_t ia = dr * params->ith;
+                const int64_t ib = MIN(ia + dr, nr);
+                if (ia < ib) {
+                    ggml_compute_forward_flash_attn_ext_tiled_tcm(params, dst, (int) ia, (int) ib, (float *) tcm);
+                }
+                return;
+            }
+        }
 
         if (!(supported_prec && supported_types && supported_shape && supported_vlen)) {
-            if (fa_probe_on) {
-                static int ime_probe_n = 0;
-                if (ime_probe_n++ < 8) {
-                    fprintf(stderr,
-                            "[IMEPROBE] FALLBACK prec=%d types=%d(q=%s k=%s v=%s) shape=%d(DK=%lld DV=%lld) "
-                            "vlen=%d(vlenb=%zu want 128) -> generic ggml-cpu FA\n",
-                            (int) supported_prec, (int) supported_types,
-                            ggml_type_name(q->type), ggml_type_name(k->type), ggml_type_name(v->type),
-                            (int) supported_shape, (long long) DK, (long long) DV,
-                            (int) supported_vlen, __riscv_vlenb());
-                }
-            }
             ggml_compute_forward_flash_attn_ext(params, dst);
             return;
-        }
-        if (fa_probe_on) {
-            static int ime_probe_ok = 0;
-            if (ime_probe_ok++ < 4) {
-                fprintf(stderr, "[IMEPROBE] USING SPACEMIT IME FA KERNEL DK=%lld DV=%lld vlenb=%zu\n",
-                        (long long) DK, (long long) DV, __riscv_vlenb());
-            }
         }
 
         // total rows in q
