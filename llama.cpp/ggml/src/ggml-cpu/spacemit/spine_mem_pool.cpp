@@ -446,7 +446,16 @@ class spine_mem_pool_posix final : public spine_mem_pool_manager {
 
 class spine_mem_pool_transparent_hugepage final : public spine_mem_pool_manager {
   public:
-    spine_mem_pool_transparent_hugepage() : spine_mem_pool_manager(SPINE_MEM_POOL_CHUNK_SIZE) {}
+    // The 512 MiB default over-reserves badly for small models: a 2B run needs
+    // ~180 MiB of buffers but pays ~740 MiB of arena. Make it tunable.
+    static size_t chunk_from_env() {
+        static const size_t v = []() -> size_t {
+            const char * e = getenv("SPINE_POOL_CHUNK_MB");
+            return e ? (size_t) atoll(e) * 1024ull * 1024ull : SPINE_MEM_POOL_CHUNK_SIZE;
+        }();
+        return v;
+    }
+    spine_mem_pool_transparent_hugepage() : spine_mem_pool_manager(chunk_from_env()) {}
 
     ~spine_mem_pool_transparent_hugepage() override { release_chunks(); }
 

@@ -1,0 +1,6 @@
+直接输出 JSON，不要思考过程，不要解释。请输出一个 JSON 数组，包含 15 个对象，每个对象描述一家芯片公司，字段为 name、founded、hq。
+请输出一个 JSON 数组，包含 15 个对象，每个对象描述一款 RISC-V 开发板，字段为 board、soc、ram_gb。只输出 JSON。
+请输出一个 JSON 对象，包含 15 个键值对，键是中文成语，值是其英文翻译。只输出 JSON。
+请输出一个 JSON 数组，包含 15 个对象，每个对象是一门编程语言，字段为 lang、year、paradigm。只输出 JSON。
+请输出一个 JSON 数组，包含 15 个对象，每个对象是一个城市，字段为 city、country、population_m。只输出 JSON。
+请输出一个 JSON 对象，包含 15 个字段，字段名是 Linux 命令，值是它的一句话用途。只输出 JSON。

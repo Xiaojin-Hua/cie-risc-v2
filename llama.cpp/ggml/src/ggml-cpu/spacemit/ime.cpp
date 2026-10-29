@@ -2003,6 +2003,40 @@ static void ggml_backend_riscv64_spacemit_buffer_set_tensor(ggml_backend_buffer_
     if (tensor_traits) {
         auto OK = tensor_traits->repack(tensor, data, size);
         GGML_ASSERT(OK == 0);
+        // The weights are now repacked into the SpacemiT pool buffer; the source
+        // pages of the GGUF mapping are dead, yet they stay resident and duplicate
+        // the model in memory. Drop them. SPINE_KEEP_SRC=1 disables (A/B).
+        static const bool keep_src = getenv("SPINE_KEEP_SRC") != nullptr;
+        // only drop pages that belong to the GGUF file mapping: heap buffers
+        // (e.g. the CED projections) must not be released here
+        auto in_gguf_mapping = [](const void * p, size_t n) {
+            static std::vector<std::pair<uintptr_t, uintptr_t>> ranges;
+            if (ranges.empty()) {
+                ranges = [] {
+                std::vector<std::pair<uintptr_t, uintptr_t>> v;
+                FILE * f = fopen("/proc/self/maps", "r");
+                char line[512];
+                while (f && fgets(line, sizeof(line), f)) {
+                    unsigned long a = 0, b = 0; char perms[8] = {0}, path[400] = {0};
+                    if (sscanf(line, "%lx-%lx %7s %*s %*s %*s %399s", &a, &b, perms, path) >= 3 && strstr(path, ".gguf")) {
+                        v.push_back({ a, b });
+                    }
+                }
+                if (f) { fclose(f); }
+                return v;
+            }();
+            }
+            for (const auto & r : ranges) {
+                if ((uintptr_t) p >= r.first && (uintptr_t) p + n <= r.second) { return true; }
+            }
+            return false;
+        };
+        if (!keep_src && data != nullptr && in_gguf_mapping(data, size)) {
+            const uintptr_t pg = 4096;
+            const uintptr_t s0 = (uintptr_t) data & ~(pg - 1);
+            const uintptr_t e0 = ((uintptr_t) data + size + pg - 1) & ~(pg - 1);
+            madvise((void *) s0, (size_t)(e0 - s0), MADV_DONTNEED);
+        }
     }
 
     GGML_UNUSED(buffer);

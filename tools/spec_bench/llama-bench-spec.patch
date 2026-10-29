@@ -1,0 +1,837 @@
+diff --git a/llama.cpp/tools/llama-bench/llama-bench.cpp b/llama.cpp/tools/llama-bench/llama-bench.cpp
+index f58481b..9896e27 100644
+--- a/llama.cpp/tools/llama-bench/llama-bench.cpp
++++ b/llama.cpp/tools/llama-bench/llama-bench.cpp
+@@ -9,6 +9,7 @@
+ #include <cstdlib>
+ #include <cstring>
+ #include <ctime>
++#include <fstream>
+ #include <iterator>
+ #include <map>
+ #include <numeric>
+@@ -27,6 +28,8 @@
+ #include "ggml.h"
+ #include "llama.h"
+ #include "log.h"
++#include "sampling.h"
++#include "speculative.h"
+ 
+ #ifdef _WIN32
+ #    define WIN32_LEAN_AND_MEAN
+@@ -36,6 +39,9 @@
+ #    include <windows.h>
+ #endif
+ 
++// print the draft/verify decisions of the speculative decoding loop (--spec-debug)
++static bool g_spec_debug = false;
++
+ // utils
+ static uint64_t get_time_ns() {
+     using clock = std::chrono::high_resolution_clock;
+@@ -366,6 +372,16 @@ struct cmd_params {
+     std::vector<bool>                no_host;
+     std::vector<size_t>              fit_params_target;
+     std::vector<uint32_t>            fit_params_min_ctx;
++    // speculative decoding (single values, not part of the parameter sweep)
++    std::string                      spec_draft_model;
++    std::string                      spec_type;
++    int                              spec_draft_n_max;
++    std::string                      spec_prompt_file;
++    float                            spec_temp;   // -1 = use the common default (0.8)
++    int                              spec_rs_seq; // recurrent-state rollback snapshots (-1 = auto)
++    int                              spec_ctx;    // target context size in spec mode (0 = n_gen + headroom)
++    uint32_t                         spec_seed;   // sampling seed for the generation tests
++    int                              spec_ctx_extra; // extra n_ctx headroom for spec mode
+     ggml_numa_strategy               numa;
+     int                              reps;
+     ggml_sched_priority              prio;
+@@ -411,6 +427,15 @@ static const cmd_params cmd_params_defaults = {
+     /* no_host              */ { false },
+     /* fit_params_target    */ { 0 },
+     /* fit_params_min_ctx   */ { 0 },
++    /* spec_draft_model     */ "",
++    /* spec_type            */ "",
++    /* spec_draft_n_max     */ 3,
++    /* spec_prompt_file     */ "",
++    /* spec_temp            */ -1.0f,
++    /* spec_rs_seq          */ -1,
++    /* spec_ctx             */ 0,
++    /* spec_seed            */ 42,
++    /* spec_ctx_extra       */ 0,
+     /* numa                 */ GGML_NUMA_STRATEGY_DISABLED,
+     /* reps                 */ 5,
+     /* prio                 */ GGML_SCHED_PRIO_NORMAL,
+@@ -485,6 +510,20 @@ static void print_usage(int /* argc */, char ** argv) {
+     printf("  -nopo, --no-op-offload <0|1>                      (default: 0)\n");
+     printf("  --no-host <0|1>                                   (default: %s)\n", join(cmd_params_defaults.no_host, ",").c_str());
+     printf("\n");
++    printf("speculative decoding (generation tests only, requires -p 0):\n");
++    printf("  -md, --spec-draft-model <filename>                draft model for speculative decoding (default: unused)\n");
++    printf("  --spec-type <type>                                speculative type, e.g. 'draft-eagle3' or 'ngram-simple'\n");
++    printf("                                                    (default: draft-eagle3 when -md is given)\n");
++    printf("  --spec-draft-n-max <n>                            max draft tokens per step (default: %d)\n", cmd_params_defaults.spec_draft_n_max);
++    printf("  --spec-prompt-file <filename>                     text file used to prime the context before the\n");
++    printf("                                                    generation test (default: start from BOS)\n");
++    printf("  --spec-temp <t>                                   sampling temperature, 0 = greedy (default: %g)\n", 0.8);
++    printf("  --spec-seed <n>                                   sampling seed (default: %u)\n", cmd_params_defaults.spec_seed);
++    printf("  --spec-ctx <n>                                    target context size in spec mode (default: n-gen + headroom)\n");
++    printf("  --spec-rs-seq <n>                                 recurrent-state rollback snapshots per sequence\n");
++    printf("                                                    (0 = use checkpoints+replay; default: --spec-draft-n-max)\n");
++    printf("  --spec-debug                                      print the draft/verify decisions and the generated text\n");
++    printf("\n");
+     printf(
+         "Multiple values can be given for each parameter by separating them with ','\n"
+         "or by specifying the parameter multiple times. Ranges can be given as\n"
+@@ -540,6 +579,15 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
+     params.progress             = cmd_params_defaults.progress;
+     params.no_warmup            = cmd_params_defaults.no_warmup;
+     params.offline              = cmd_params_defaults.offline;
++    params.spec_draft_model     = cmd_params_defaults.spec_draft_model;
++    params.spec_type            = cmd_params_defaults.spec_type;
++    params.spec_draft_n_max     = cmd_params_defaults.spec_draft_n_max;
++    params.spec_prompt_file     = cmd_params_defaults.spec_prompt_file;
++    params.spec_temp            = cmd_params_defaults.spec_temp;
++    params.spec_rs_seq          = cmd_params_defaults.spec_rs_seq;
++    params.spec_ctx             = cmd_params_defaults.spec_ctx;
++    params.spec_seed            = cmd_params_defaults.spec_seed;
++    params.spec_ctx_extra       = cmd_params_defaults.spec_ctx_extra;
+ 
+     if (const char * env = getenv("HF_TOKEN")) {
+         params.hf_token = env;
+@@ -1103,6 +1151,56 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
+                 for (const auto & v : p) {
+                     params.fit_params_min_ctx.push_back(std::stoul(v));
+                 }
++            } else if (arg == "-md" || arg == "--spec-draft-model") {
++                if (++i >= argc) {
++                    invalid_param = true;
++                    break;
++                }
++                params.spec_draft_model = argv[i];
++            } else if (arg == "--spec-type") {
++                if (++i >= argc) {
++                    invalid_param = true;
++                    break;
++                }
++                params.spec_type = argv[i];
++            } else if (arg == "--spec-draft-n-max") {
++                if (++i >= argc) {
++                    invalid_param = true;
++                    break;
++                }
++                params.spec_draft_n_max = std::stoi(argv[i]);
++            } else if (arg == "--spec-prompt-file") {
++                if (++i >= argc) {
++                    invalid_param = true;
++                    break;
++                }
++                params.spec_prompt_file = argv[i];
++            } else if (arg == "--spec-temp") {
++                if (++i >= argc) {
++                    invalid_param = true;
++                    break;
++                }
++                params.spec_temp = std::stof(argv[i]);
++            } else if (arg == "--spec-ctx") {
++                if (++i >= argc) {
++                    invalid_param = true;
++                    break;
++                }
++                params.spec_ctx = std::stoi(argv[i]);
++            } else if (arg == "--spec-rs-seq") {
++                if (++i >= argc) {
++                    invalid_param = true;
++                    break;
++                }
++                params.spec_rs_seq = std::stoi(argv[i]);
++            } else if (arg == "--spec-seed") {
++                if (++i >= argc) {
++                    invalid_param = true;
++                    break;
++                }
++                params.spec_seed = (uint32_t) std::stoul(argv[i]);
++            } else if (arg == "--spec-debug") {
++                g_spec_debug = true;
+             } else {
+                 invalid_param = true;
+                 break;
+@@ -1231,6 +1329,70 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
+         params.fit_params_min_ctx = cmd_params_defaults.fit_params_min_ctx;
+     }
+ 
++    // speculative decoding setup / validation
++    if (!params.spec_draft_model.empty() && params.spec_type.empty()) {
++        // the most common case is an eagle3 draft model; other draft types can be auto-detected
++        // from the GGUF metadata, but eagle3 cannot
++        auto types = common_speculative_types_from_gguf(params.spec_draft_model);
++        if (types.empty()) {
++            types = { COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3 };
++        }
++        params.spec_type = common_speculative_type_name_str(types);
++    }
++
++    if (!params.spec_type.empty()) {
++        if (params.spec_type == "none") {
++            params.spec_type.clear();
++        } else {
++            if (common_speculative_type_from_name(params.spec_type) == COMMON_SPECULATIVE_TYPE_COUNT) {
++                fprintf(stderr, "error: unknown speculative type '%s' (supported: %s)\n",
++                        params.spec_type.c_str(), common_speculative_all_types_str());
++                exit(1);
++            }
++            const auto type = common_speculative_type_from_name(params.spec_type);
++            const bool needs_draft =
++                type == COMMON_SPECULATIVE_TYPE_DRAFT_SIMPLE ||
++                type == COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3 ||
++                type == COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH ||
++                type == COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK;
++            if (needs_draft && params.spec_draft_model.empty()) {
++                fprintf(stderr, "error: speculative type '%s' requires -md/--spec-draft-model\n", params.spec_type.c_str());
++                exit(1);
++            }
++            if (params.spec_draft_n_max < 1) {
++                fprintf(stderr, "error: --spec-draft-n-max must be >= 1\n");
++                exit(1);
++            }
++            for (const auto n_prompt : params.n_prompt) {
++                if (n_prompt > 0) {
++                    fprintf(stderr, "error: speculative decoding in llama-bench requires -p 0 "
++                            "(use --spec-prompt-file to prime the context with real text)\n");
++                    exit(1);
++                }
++            }
++            for (const auto n_depth : params.n_depth) {
++                if (n_depth > 0) {
++                    fprintf(stderr, "error: speculative decoding in llama-bench does not support -d/--n-depth\n");
++                    exit(1);
++                }
++            }
++
++            // reserve context for the draft tokens of the last generation step
++            params.spec_ctx_extra = params.spec_draft_n_max + 8;
++
++            if (!params.spec_prompt_file.empty()) {
++                std::ifstream f(params.spec_prompt_file, std::ios::binary | std::ios::ate);
++                if (!f) {
++                    fprintf(stderr, "error: failed to open --spec-prompt-file '%s'\n", params.spec_prompt_file.c_str());
++                    exit(1);
++                }
++                // one token is at least one byte - use the file size as an upper bound
++                const size_t n_bytes = (size_t) f.tellg();
++                params.spec_ctx_extra += (int) std::min<size_t>(n_bytes + 8, 16384);
++            }
++        }
++    }
++
+     return params;
+ }
+ 
+@@ -1326,10 +1488,10 @@ struct cmd_params_instance {
+                vec_tensor_buft_override_equal(tensor_buft_overrides, other.tensor_buft_overrides);
+     }
+ 
+-    llama_context_params to_llama_cparams() const {
++    llama_context_params to_llama_cparams(int n_ctx_extra = 0) const {
+         llama_context_params cparams = llama_context_default_params();
+ 
+-        cparams.n_ctx           = n_prompt + n_gen + n_depth;
++        cparams.n_ctx           = n_prompt + n_gen + n_depth + n_ctx_extra;
+         cparams.n_batch         = n_batch;
+         cparams.n_ubatch        = n_ubatch;
+         cparams.type_k          = type_k;
+@@ -1529,6 +1691,9 @@ struct test {
+     int                      n_depth;
+     std::string              test_time;
+     std::vector<uint64_t>    samples_ns;
++    // tokens actually produced per repetition - only populated by speculative decoding,
++    // where the number of generated tokens differs from n_gen
++    std::vector<int64_t>     samples_ntok;
+ 
+     test(const cmd_params_instance & inst, const llama_model * lmodel, const llama_context * ctx) :
+         cpu_info(get_cpu_info()),
+@@ -1582,8 +1747,11 @@ struct test {
+     std::vector<double> get_ts() const {
+         int                 n_tokens = n_prompt + n_gen;
+         std::vector<double> ts;
+-        std::transform(samples_ns.begin(), samples_ns.end(), std::back_inserter(ts),
+-                       [n_tokens](uint64_t t) { return 1e9 * n_tokens / t; });
++        ts.reserve(samples_ns.size());
++        for (size_t i = 0; i < samples_ns.size(); i++) {
++            const int64_t n_tok = i < samples_ntok.size() ? samples_ntok[i] : n_tokens;
++            ts.push_back(1e9 * n_tok / samples_ns[i]);
++        }
+         return ts;
+     }
+ 
+@@ -2173,6 +2341,106 @@ struct ctx_state {
+     std::vector<uint8_t> buf; // the llama_context state buffer
+ };
+ 
++// state for the speculative decoding benchmark mode
++struct spec_state {
++    common_speculative * spec    = nullptr;
++    llama_context *      ctx_dft = nullptr;
++    common_sampler *     smpl    = nullptr;
++    int                  n_max   = 3;
++
++    // whether the contexts can only remove complete sequences (checkpoints + replay are needed)
++    bool use_ckpt_tgt = false;
++    bool use_ckpt_dft = false;
++
++    // tokens that have been evaluated in the target context (i.e. are in its KV cache)
++    llama_tokens prompt_tgt;
++    // the next token to evaluate - it is not in the KV cache yet
++    llama_token id_last = 0;
++    int         n_past  = 0;
++
++    // statistics, accumulated over the timed repetitions
++    int64_t n_draft    = 0; // draft tokens that were verified
++    int64_t n_accepted = 0; // draft tokens that were accepted
++    int64_t n_steps    = 0; // verification steps
++    int64_t n_gen      = 0; // tokens actually produced
++
++    // the generated tokens (only kept for diagnostics)
++    llama_tokens output;
++};
++
++// prime the target and draft contexts before a generation test:
++// evaluate the prompt, sample the first token and feed the prompt to the speculative implementation(s)
++static bool spec_prepare(llama_context * ctx, spec_state & ss, const llama_tokens & prompt,
++                         int n_batch, int n_threads) {
++    llama_set_n_threads(ctx, n_threads, n_threads);
++
++    llama_memory_t mem_tgt = llama_get_memory(ctx);
++    llama_memory_t mem_dft = ss.ctx_dft ? llama_get_memory(ss.ctx_dft) : nullptr;
++
++    llama_memory_clear(mem_tgt, false);
++    if (mem_dft) {
++        llama_memory_clear(mem_dft, false);
++    }
++
++    ss.prompt_tgt.clear();
++    ss.n_past = 0;
++
++    // each repetition is an independent generation - start from the same sampler state
++    // (the server also creates a fresh sampler per request)
++    common_sampler_reset(ss.smpl);
++
++    if (g_spec_debug) {
++        ss.output.clear();
++    }
++
++    // without a prompt, start from BOS
++    llama_tokens inp = prompt;
++    if (inp.empty()) {
++        const llama_vocab * vocab = llama_model_get_vocab(llama_get_model(ctx));
++        inp.push_back(llama_vocab_get_add_bos(vocab) ? llama_vocab_bos(vocab) : 0);
++    }
++
++    llama_batch batch = llama_batch_init(n_batch, 0, 1);
++
++    int n_processed = 0;
++    while (n_processed < (int) inp.size()) {
++        const int n_tokens = std::min((int) inp.size() - n_processed, n_batch);
++
++        common_batch_clear(batch);
++        for (int i = 0; i < n_tokens; i++) {
++            const bool logits = n_processed + i == (int) inp.size() - 1;
++            common_batch_add(batch, inp[n_processed + i], n_processed + i, { 0 }, logits);
++        }
++
++        if (llama_decode(ctx, batch) != 0) {
++            fprintf(stderr, "%s: failed to decode prompt batch\n", __func__);
++            llama_batch_free(batch);
++            return false;
++        }
++
++        if (!common_speculative_process(ss.spec, batch)) {
++            fprintf(stderr, "%s: failed to process speculative prompt batch\n", __func__);
++            llama_batch_free(batch);
++            return false;
++        }
++
++        n_processed += n_tokens;
++    }
++
++    // the logits of the last prompt token predict the first generated token
++    ss.id_last = common_sampler_sample(ss.smpl, ctx, -1);
++    common_sampler_accept(ss.smpl, ss.id_last, true);
++
++    llama_batch_free(batch);
++
++    ss.prompt_tgt = std::move(inp);
++    ss.n_past     = (int) ss.prompt_tgt.size();
++
++    common_speculative_begin(ss.spec, 0, ss.prompt_tgt);
++
++    return true;
++}
++
+ static bool test_prompt(llama_context * ctx, int n_prompt, int n_batch, int n_threads) {
+     llama_set_n_threads(ctx, n_threads, n_threads);
+ 
+@@ -2202,24 +2470,219 @@ static bool test_prompt(llama_context * ctx, int n_prompt, int n_batch, int n_th
+     return true;
+ }
+ 
+-static bool test_gen(llama_context * ctx, int n_gen, int n_threads) {
++static bool test_gen(llama_context * ctx, int n_gen, int n_threads, spec_state * ss = nullptr) {
+     llama_set_n_threads(ctx, n_threads, n_threads);
+ 
+     const llama_model * model   = llama_get_model(ctx);
+     const llama_vocab * vocab   = llama_model_get_vocab(model);
+     const int32_t       n_vocab = llama_vocab_n_tokens(vocab);
+ 
+-    llama_token token = llama_vocab_get_add_bos(vocab) ? llama_vocab_bos(vocab) : std::rand() % n_vocab;
++    if (ss == nullptr) {
++        // standard decoding benchmark - the tokens are random, the model output is ignored
++        llama_token token = llama_vocab_get_add_bos(vocab) ? llama_vocab_bos(vocab) : std::rand() % n_vocab;
+ 
+-    for (int i = 0; i < n_gen; i++) {
+-        int res = llama_decode(ctx, llama_batch_get_one(&token, 1));
+-        if (res != 0) {
+-            fprintf(stderr, "%s: failed to decode generation batch, res = %d\n", __func__, res);
++        for (int i = 0; i < n_gen; i++) {
++            int res = llama_decode(ctx, llama_batch_get_one(&token, 1));
++            if (res != 0) {
++                fprintf(stderr, "%s: failed to decode generation batch, res = %d\n", __func__, res);
++                return false;
++            }
++            llama_synchronize(ctx);
++            token = std::rand() % n_vocab;
++        }
++        return true;
++    }
++
++    // speculative decoding: draft -> verify -> accept
++    common_speculative * spec    = ss->spec;
++    common_sampler     * smpl    = ss->smpl;
++    llama_context      * ctx_dft = ss->ctx_dft;
++
++    llama_memory_t mem_tgt = llama_get_memory(ctx);
++    llama_memory_t mem_dft = ctx_dft ? llama_get_memory(ctx_dft) : nullptr;
++
++    // if the context cannot remove partial sequences, use checkpoints + replay
++    // note: this must be queried before the contexts are primed - the check evaluates and clears them
++    const bool use_ckpt_tgt = ss->use_ckpt_tgt;
++    const bool use_ckpt_dft = ss->use_ckpt_dft;
++
++    llama_batch batch = llama_batch_init(std::max(1, ss->n_max) + 1, 0, 1);
++
++    llama_tokens draft;
++    llama_tokens ids;
++
++    llama_token id_last    = ss->id_last;
++    int         n_past     = ss->n_past;
++    int         n_produced = 0;
++
++    common_prompt_checkpoint ckpt;
++
++    // printable representation of a token, used by --spec-debug
++    auto piece_str = [&](llama_token t) {
++        const std::string piece = common_token_to_piece(ctx, t);
++        std::string res;
++        for (const char c : piece) {
++            switch (c) {
++                case '\n': res += "\\n"; break;
++                case '\r': res += "\\r"; break;
++                case '\t': res += "\\t"; break;
++                default:   res += c;       break;
++            }
++        }
++        return res;
++    };
++
++    while (n_produced < n_gen) {
++        if (draft.empty()) {
++            // draft a new batch of tokens
++            ckpt.update_pos(ss->prompt_tgt.size(),
++                    llama_memory_seq_pos_min(mem_tgt, 0),
++                    llama_memory_seq_pos_max(mem_tgt, 0));
++
++            if (use_ckpt_dft) {
++                ckpt.update_dft(ctx_dft, 0, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
++            }
++
++            // limit the draft to the remaining generation budget and context space
++            int n_draft_max = std::min(ss->n_max, n_gen - n_produced - 1);
++            n_draft_max = std::min(n_draft_max, (int) llama_n_ctx(ctx) - n_past - 2);
++            n_draft_max = std::max(n_draft_max, 0);
++
++            common_speculative_get_draft_params(spec, 0) = {
++                /* .drafting = */ true,
++                /* .n_max    = */ n_draft_max,
++                /* .n_past   = */ n_past,
++                /* .id_last  = */ id_last,
++                /* .prompt   = */ &ss->prompt_tgt,
++                /* .result   = */ &draft, // output
++            };
++
++            common_speculative_draft(spec);
++
++            ss->n_draft += (int64_t) draft.size();
++
++            if (!draft.empty() && use_ckpt_tgt) {
++                ckpt.update_tgt(ctx, 0, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
++            }
++
++            // reset the draft context to the checkpoint before verification
++            if (ctx_dft) {
++                if (use_ckpt_dft) {
++                    ckpt.load_dft(ctx_dft, 0, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
++                }
++                llama_memory_seq_rm(mem_dft, 0, ckpt.pos_max + 1, -1);
++            }
++        }
++
++        const size_t n_draft = draft.size();
++
++        if (g_spec_debug) {
++            std::string dstr;
++            for (const auto & t : draft) {
++                dstr += string_format("%d('%s') ", t, piece_str(t).c_str());
++            }
++            fprintf(stderr, "spec step %4" PRId64 ": n_past = %4d, id_last = %d('%s'), draft = [ %s]\n",
++                    ss->n_steps, n_past, id_last, piece_str(id_last).c_str(), dstr.c_str());
++        }
++
++        // evaluate [id_last, draft0, ..., draftN-1] and keep the logits of every position
++        common_batch_clear(batch);
++        common_batch_add(batch, id_last, n_past, { 0 }, true);
++        for (size_t i = 0; i < n_draft; i++) {
++            common_batch_add(batch, draft[i], n_past + 1 + (int) i, { 0 }, true);
++        }
++
++        if (llama_decode(ctx, batch) != 0) {
++            fprintf(stderr, "%s: failed to decode generation batch\n", __func__);
++            llama_batch_free(batch);
++            return false;
++        }
++
++        // feed the batch to the speculative implementation(s) - this drives the draft model
++        if (!common_speculative_process(spec, batch)) {
++            fprintf(stderr, "%s: failed to process speculative batch\n", __func__);
++            llama_batch_free(batch);
+             return false;
+         }
+-        llama_synchronize(ctx);
+-        token = std::rand() % n_vocab;
++
++        // only save the sampler state if we use checkpoints
++        common_sampler_ptr smpl_save;
++        if (use_ckpt_tgt) {
++            smpl_save.reset(common_sampler_clone(smpl));
++        }
++
++        // sample from the full target batch and cross-reference with the draft
++        ids = common_sampler_sample_and_accept_n(smpl, ctx, draft);
++
++        GGML_ASSERT(!ids.empty()); // there is always at least one accepted token
++
++        if (g_spec_debug) {
++            std::string istr;
++            for (const auto & t : ids) {
++                istr += string_format("%d('%s') ", t, piece_str(t).c_str());
++            }
++            fprintf(stderr, "spec step %4" PRId64 ": accepted %2zu/%2zu -> [ %s]\n",
++                    ss->n_steps, ids.size() - 1, n_draft, istr.c_str());
++        }
++
++        if (use_ckpt_tgt && ids.size() - 1 < n_draft) {
++            // partial acceptance - restore the checkpoint and reuse the accepted tokens as the next draft
++            draft = ids;
++
++            ckpt.load_tgt(ctx, 0, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
++            llama_memory_seq_rm(mem_tgt, 0, ckpt.pos_max + 1, -1);
++
++            if (ctx_dft) {
++                if (use_ckpt_dft) {
++                    ckpt.load_dft(ctx_dft, 0, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
++                }
++                llama_memory_seq_rm(mem_dft, 0, ckpt.pos_max + 1, -1);
++            }
++
++            ss->prompt_tgt.resize(ckpt.n_tokens);
++            common_sampler_copy(smpl_save.get(), smpl);
++
++            n_past = (int) ss->prompt_tgt.size();
++
++            continue;
++        }
++
++        common_speculative_accept(spec, 0, (uint16_t) (ids.size() - 1));
++
++        ss->n_accepted += (int64_t) ids.size() - 1;
++        ss->n_steps    += 1;
++        ss->n_gen      += (int64_t) ids.size();
++
++        // the accepted tokens are already evaluated - the target context now holds
++        // [prompt_tgt, id_last, accepted drafts]
++        n_produced += (int) ids.size();
++        n_past     += (int) ids.size();
++
++        for (size_t i = 0; i < ids.size(); i++) {
++            ss->prompt_tgt.push_back(id_last);
++            id_last = ids[i];
++        }
++
++        if (g_spec_debug) {
++            ss->output.insert(ss->output.end(), ids.begin(), ids.end());
++        }
++
++        draft.clear();
++
++        // discard the rejected draft positions from the KV caches
++        if (!llama_memory_seq_rm(mem_tgt, 0, n_past, -1)) {
++            fprintf(stderr, "%s: failed to remove tokens from the target context\n", __func__);
++        }
++        if (mem_dft && !llama_memory_seq_rm(mem_dft, 0, n_past, -1)) {
++            fprintf(stderr, "%s: failed to remove tokens from the draft context\n", __func__);
++        }
+     }
++
++    ss->id_last = id_last;
++    ss->n_past  = n_past;
++
++    llama_batch_free(batch);
++
+     return true;
+ }
+ 
+@@ -2324,7 +2787,24 @@ int llama_bench(int argc, char ** argv) {
+             fprintf(stderr, "llama-bench: benchmark %d/%zu: starting\n", params_idx, params_count);
+         }
+         auto mparams = inst.to_llama_mparams();
+-        auto cparams = inst.to_llama_cparams();
++        auto cparams = inst.to_llama_cparams(params.spec_ctx_extra);
++
++        const bool use_spec = !params.spec_type.empty();
++        if (use_spec) {
++            // allow partial rollback of the recurrent/hybrid state after a rejected draft
++            cparams.n_rs_seq = params.spec_rs_seq >= 0 ? (uint32_t) params.spec_rs_seq
++                                                       : (uint32_t) params.spec_draft_n_max;
++
++            if (params.spec_ctx > 0) {
++                cparams.n_ctx = (uint32_t) params.spec_ctx;
++            }
++
++            // the verifier needs one output per draft token plus one for the sampled token
++            const auto limits = common_speculative_get_output_limits(
++                    (int32_t) cparams.n_batch, 1, params.spec_draft_n_max);
++            cparams.n_outputs_max         = limits.total;
++            cparams.n_outputs_max_per_seq = limits.per_seq;
++        }
+ 
+         bool do_fit = inst.fit_target != cmd_params_defaults.fit_params_target[0] ||
+                       inst.fit_min_ctx != cmd_params_defaults.fit_params_min_ctx[0];
+@@ -2381,6 +2861,110 @@ int llama_bench(int argc, char ** argv) {
+             return 1;
+         }
+ 
++        // speculative decoding setup
++        common_params                       spec_params; // holds the speculative parameters and the context pointers
++        common_speculative_init_result_ptr  spec_init;
++        common_speculative_ptr              spec;
++        common_sampler_ptr                  spec_smpl;
++        spec_state                          ss;
++        llama_tokens                        spec_prompt;
++
++        if (use_spec) {
++            const auto type = common_speculative_type_from_name(params.spec_type);
++
++            spec_params.model.path                = inst.model;
++            spec_params.n_ctx                     = (int32_t) cparams.n_ctx;
++            spec_params.n_batch                   = (int32_t) cparams.n_batch;
++            spec_params.n_ubatch                  = (int32_t) cparams.n_ubatch;
++            spec_params.n_outputs_max             = (int32_t) cparams.n_outputs_max;
++            spec_params.n_outputs_max_per_seq     = (int32_t) cparams.n_outputs_max_per_seq;
++            spec_params.n_parallel                = 1;
++            spec_params.flash_attn_type           = cparams.flash_attn_type;
++            spec_params.cpuparams.n_threads       = inst.n_threads;
++            spec_params.cpuparams_batch.n_threads = inst.n_threads;
++
++            spec_params.speculative.types               = { type };
++            spec_params.speculative.draft.n_max         = params.spec_draft_n_max;
++            spec_params.speculative.draft.mparams.path  = params.spec_draft_model;
++
++            // load the draft model (if any) and create its context
++            {
++                common_params params_dft = common_base_params_to_speculative(spec_params);
++
++                spec_init = common_speculative_init_from_params(params_dft, lmodel, ctx);
++
++                spec_params.speculative.draft.ctx_tgt = ctx;
++                spec_params.speculative.draft.ctx_dft = spec_init->context();
++            }
++
++            if (!params.spec_draft_model.empty() && spec_init->model() == nullptr) {
++                fprintf(stderr, "%s: error: failed to load draft model '%s'\n", __func__, params.spec_draft_model.c_str());
++                llama_free(ctx);
++                llama_model_free(lmodel);
++                return 1;
++            }
++
++            // query the rollback capabilities before the speculative implementation is created,
++            // mirroring the server (the check evaluates and clears the contexts)
++            ss.use_ckpt_tgt = common_context_can_seq_rm(ctx) == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
++            ss.use_ckpt_dft = ss.ctx_dft && common_context_can_seq_rm(ss.ctx_dft) == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
++
++            try {
++                spec.reset(common_speculative_init(spec_params.speculative, 1));
++            } catch (const std::exception & e) {
++                fprintf(stderr, "%s: error: failed to initialize speculative decoding: %s\n", __func__, e.what());
++                llama_free(ctx);
++                llama_model_free(lmodel);
++                return 1;
++            }
++
++            if (!spec) {
++                fprintf(stderr, "%s: error: failed to initialize speculative decoding\n", __func__);
++                llama_free(ctx);
++                llama_model_free(lmodel);
++                return 1;
++            }
++
++            spec_params.sampling.seed = params.spec_seed;
++            if (params.spec_temp >= 0.0f) {
++                spec_params.sampling.temp = params.spec_temp;
++            }
++            spec_smpl.reset(common_sampler_init(lmodel, spec_params.sampling));
++
++            ss.spec    = spec.get();
++            ss.ctx_dft = spec_params.speculative.draft.ctx_dft;
++            ss.smpl    = spec_smpl.get();
++            ss.n_max   = params.spec_draft_n_max;
++
++            if (!params.spec_prompt_file.empty()) {
++                std::ifstream f(params.spec_prompt_file, std::ios::binary);
++                if (!f) {
++                    fprintf(stderr, "%s: error: failed to open '%s'\n", __func__, params.spec_prompt_file.c_str());
++                    llama_free(ctx);
++                    llama_model_free(lmodel);
++                    return 1;
++                }
++                std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
++                spec_prompt = common_tokenize(ctx, text, true, true);
++
++                if (spec_prompt.empty()) {
++                    fprintf(stderr, "%s: error: the prompt file '%s' is empty\n", __func__, params.spec_prompt_file.c_str());
++                    llama_free(ctx);
++                    llama_model_free(lmodel);
++                    return 1;
++                }
++            }
++
++            if (params.verbose) {
++                std::string ptoks;
++                for (size_t i = 0; i < std::min<size_t>(spec_prompt.size(), 6); i++) {
++                    ptoks += string_format("%d ", spec_prompt[i]);
++                }
++                fprintf(stderr, "llama-bench: speculative decoding: type = %s, n_max = %d, prompt tokens = %zu [%s...]\n",
++                        params.spec_type.c_str(), params.spec_draft_n_max, spec_prompt.size(), ptoks.c_str());
++            }
++        }
++
+         test t(inst, lmodel, ctx);
+ 
+         llama_memory_clear(llama_get_memory(ctx), false);
+@@ -2430,7 +3014,13 @@ int llama_bench(int argc, char ** argv) {
+                 if (params.progress) {
+                     fprintf(stderr, "llama-bench: benchmark %d/%zu: warmup generation run\n", params_idx, params_count);
+                 }
+-                bool res = test_gen(ctx, 1, t.n_threads);
++                if (use_spec && !spec_prepare(ctx, ss, spec_prompt, t.n_batch, t.n_threads)) {
++                    fprintf(stderr, "%s: error: failed to prepare speculative decoding\n", __func__);
++                    llama_free(ctx);
++                    llama_model_free(lmodel);
++                    exit(1);
++                }
++                bool res = test_gen(ctx, 1, t.n_threads, use_spec ? &ss : nullptr);
+                 if (!res) {
+                     fprintf(stderr, "%s: error: failed to run gen warmup\n", __func__);
+                     llama_free(ctx);
+@@ -2440,6 +3030,14 @@ int llama_bench(int argc, char ** argv) {
+             }
+         }
+ 
++        // do not count the warmup in the speculative statistics
++        if (use_spec) {
++            ss.n_draft    = 0;
++            ss.n_accepted = 0;
++            ss.n_steps    = 0;
++            ss.n_gen      = 0;
++        }
++
+         for (int i = 0; i < params.reps; i++) {
+             llama_memory_clear(llama_get_memory(ctx), false);
+ 
+@@ -2480,6 +3078,16 @@ int llama_bench(int argc, char ** argv) {
+                 }
+             }
+ 
++            // prime the speculative decoding state (not timed - this is the prefill)
++            if (t.n_gen > 0 && use_spec) {
++                if (!spec_prepare(ctx, ss, spec_prompt, t.n_batch, t.n_threads)) {
++                    fprintf(stderr, "%s: error: failed to prepare speculative decoding\n", __func__);
++                    llama_free(ctx);
++                    llama_model_free(lmodel);
++                    exit(1);
++                }
++            }
++
+             uint64_t t_start = get_time_ns();
+ 
+             if (t.n_prompt > 0) {
+@@ -2500,13 +3108,18 @@ int llama_bench(int argc, char ** argv) {
+                     fprintf(stderr, "llama-bench: benchmark %d/%zu: generation run %d/%d\n", params_idx, params_count,
+                             i + 1, params.reps);
+                 }
+-                bool res = test_gen(ctx, t.n_gen, t.n_threads);
++                const int64_t n_gen_0 = ss.n_gen;
++                bool res = test_gen(ctx, t.n_gen, t.n_threads, use_spec ? &ss : nullptr);
+                 if (!res) {
+                     fprintf(stderr, "%s: error: failed to run gen\n", __func__);
+                     llama_free(ctx);
+                     llama_model_free(lmodel);
+                     exit(1);
+                 }
++                if (use_spec) {
++                    // speculative decoding produces a variable number of tokens per step
++                    t.samples_ntok.push_back(ss.n_gen - n_gen_0);
++                }
+             }
+ 
+             uint64_t t_ns = get_time_ns() - t_start;
+@@ -2523,6 +3136,31 @@ int llama_bench(int argc, char ** argv) {
+             fflush(p_err->fout);
+         }
+ 
++        if (use_spec) {
++            if (ss.n_steps > 0) {
++                const double acceptance = ss.n_draft > 0 ? (double) ss.n_accepted / (double) ss.n_draft : 0.0;
++                const double mean_len   = 1.0 + (double) ss.n_accepted / (double) ss.n_steps;
++
++                fprintf(stderr,
++                        "llama-bench: spec stats: gen tokens = %" PRId64 ", steps = %" PRId64
++                        ", drafted = %" PRId64 ", accepted = %" PRId64
++                        ", acceptance = %.5f, mean len = %.2f\n",
++                        ss.n_gen, ss.n_steps, ss.n_draft, ss.n_accepted, acceptance, mean_len);
++            } else {
++                fprintf(stderr, "llama-bench: spec stats: no verification steps were run\n");
++            }
++            if (g_spec_debug) {
++                std::string text;
++                for (const auto & t : ss.output) {
++                    text += common_token_to_piece(ctx, t);
++                }
++                fprintf(stderr, "llama-bench: spec output (%zu tokens): \"%s\"\n", ss.output.size(), text.c_str());
++            }
++            if (params.verbose) {
++                common_speculative_print_stats(spec.get());
++            }
++        }
++
+         llama_perf_context_print(ctx);
+ 
+         llama_free(ctx);

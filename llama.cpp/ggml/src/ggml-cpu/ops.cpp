@@ -9037,7 +9037,19 @@ static inline void ggml_fa_dequant_row(float * dst, int64_t dst_stride, const ch
 }
 
 static bool ggml_fa_kv_supported_tiled(ggml_type t) {
-    return t == GGML_TYPE_F16 || t == GGML_TYPE_F32 || t == GGML_TYPE_Q8_0 || t == GGML_TYPE_Q4_0;
+    // F16/F32 are the native tile layouts.  Q8_0/Q4_0 are dequantised row by row into the K/V
+    // tiles (ggml_fa_dequant_row) and into the FlashPrefill probe (spx_fp_pool_key), so they are
+    // bit-for-bit as usable as the f16 path — the probe used to read quantised K as f16, which
+    // silently dropped the wrong key blocks (PPL 25.8 -> 104.7).  GGML_SPACEMIT_FA_TILED_Q=0
+    // still forces the generic chunked kernel for quantized KV, for A/B.
+    if (t == GGML_TYPE_F16 || t == GGML_TYPE_F32) {
+        return true;
+    }
+    static const bool allow_quant = []() {
+        const char * s = getenv("GGML_SPACEMIT_FA_TILED_Q");
+        return !(s != NULL && s[0] == '0');
+    }();
+    return allow_quant && (t == GGML_TYPE_Q8_0 || t == GGML_TYPE_Q4_0);
 }
 
 #if defined(__riscv_v_intrinsic)
@@ -9156,10 +9168,40 @@ static inline float spx_fp_dot_f32(const float * a, const float * b, int64_t n) 
 }
 #endif
 
-// dst[0..DK) = mean of the `nkeys` f16 key rows starting at key `ic0`
+// Upper bound on the head size the probe can pool when K is not f16: the dequantised key row
+// (see spx_fp_pool_key) is a stack buffer.  DK is 256 for Qwen3.5-2B and 320 for 4B.
+static constexpr int64_t SPX_FA_FP_MAX_DK = 512;
+
+// dst[0..DK) = mean of the `nkeys` key rows starting at key `ic0`.
+// The RVV path below reinterprets a key row as f16 (the -fa layout of an f16 KV cache), so a
+// quantised or f32 K must be converted row by row instead; `krow` is a DK-float scratch for that.
+// Without this the probe fed garbage block-averaged keys to the selection and the precise tiled
+// pass then ran on the wrong blocks (q4_0/q4_0 KV: PPL 25.8 -> 104.7).
 static void spx_fp_pool_key(float * dst, const char * kbase, size_t nbk1,
-                            int64_t ic0, int nkeys, int64_t DK) {
+                            int64_t ic0, int nkeys, int64_t DK, ggml_type ktype, float * krow) {
     const float inv = 1.0f / (float) nkeys;
+    if (ktype != GGML_TYPE_F16) {
+        const ggml_to_float_t to_float = ktype == GGML_TYPE_F32
+                                       ? nullptr
+                                       : ggml_get_type_traits(ktype)->to_float;
+        for (int64_t d = 0; d < DK; ++d) {
+            dst[d] = 0.0f;
+        }
+        for (int tk = 0; tk < nkeys; ++tk) {
+            const char * row = kbase + (ic0 + tk) * nbk1;
+            if (to_float != nullptr) {
+                to_float(row, krow, DK);
+            }
+            const float * src = to_float != nullptr ? krow : (const float *) row;
+            for (int64_t d = 0; d < DK; ++d) {
+                dst[d] += src[d];
+            }
+        }
+        for (int64_t d = 0; d < DK; ++d) {
+            dst[d] *= inv;
+        }
+        return;
+    }
 #if defined(__riscv_v_intrinsic)
     for (int64_t d0 = 0; d0 < DK; ) {
         // e32m4 and e16m2 have the same VLMAX for any VLEN, so one vl drives both loads
@@ -9225,7 +9267,7 @@ static int64_t spx_fa_mask_last_finite(const ggml_fp16_t * row, int64_t n) {
 // Q tiles of the same (head, seq).
 static int spx_fa_fp_select(
         const float * Q_f32, int DK, int tile_rows, int64_t pos_first, int64_t jmax,
-        const char * kbase, size_t nbk1, int64_t nek1, int64_t n_blocks,
+        const char * kbase, size_t nbk1, int64_t nek1, int64_t n_blocks, ggml_type ktype,
         float scale,
         float * Kmean, float * fm, float * fs, int32_t * sel_idx,
         int64_t & cache_iq2, int64_t & cache_iq3, int64_t & cache_blocks,
@@ -9239,6 +9281,9 @@ static int spx_fa_fp_select(
         return (int) (jmax + 1);
     }
 
+    // dequantised key row, only used when K is not f16
+    float krow[SPX_FA_FP_MAX_DK];
+
     if (cache_iq2 != cur_iq2 || cache_iq3 != cur_iq3) {
         cache_iq2 = cur_iq2;
         cache_iq3 = cur_iq3;
@@ -9249,7 +9294,7 @@ static int spx_fa_fp_select(
     for (int64_t j = cache_blocks; j <= jmax; ++j) {
         const int64_t ic0  = j * GGML_FA_TILE_KV;
         const int     nkey = (int) MIN((int64_t) GGML_FA_TILE_KV, nek1 - ic0);
-        spx_fp_pool_key(Kmean + j * DK, kbase, nbk1, ic0, nkey, DK);
+        spx_fp_pool_key(Kmean + j * DK, kbase, nbk1, ic0, nkey, DK, ktype, krow);
     }
     if (jmax + 1 > cache_blocks) cache_blocks = jmax + 1;
 
@@ -9600,14 +9645,20 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
 
         // FlashPrefill: pick the key blocks for this Q tile from the probe scores.
         // Only plain causal attention (mask present, no ALiBi/softcap) and long contexts qualify.
+        // The probe must be able to pool a key row: natively for f16 (the RVV path), through the
+        // per-row dequantisation (and its DK-sized stack scratch) for everything else.  f16 has no
+        // DK bound, so the feature keeps behaving exactly as before on f16 KV caches.
         const auto & fp_cfg = spx_fa_fp_config();
+        const bool fp_kv_ok = k->type == GGML_TYPE_F16 ||
+                              ((k->type == GGML_TYPE_F32 || k->type == GGML_TYPE_Q8_0 ||
+                                k->type == GGML_TYPE_Q4_0) && DK <= SPX_FA_FP_MAX_DK);
         const bool fp_active = causal_ok && fp_cfg.enabled &&
                                max_bias <= 0.0f && logit_softcap == 0.0f &&
-                               nek1 >= fp_cfg.min_keys && tile_rows > 0;
+                               nek1 >= fp_cfg.min_keys && tile_rows > 0 && fp_kv_ok;
         int n_sel = 0;
         if (fp_active) {
             n_sel = spx_fa_fp_select((const float *) Q_q, (int) DK, tile_rows, pos_first, jmax,
-                    (const char *) k->data + ik2*nbk2 + ik3*nbk3, nbk1, nek1, n_blocks, scale,
+                    (const char *) k->data + ik2*nbk2 + ik3*nbk3, nbk1, nek1, n_blocks, k->type, scale,
                     Kmean, fp_m, fp_s, sel_idx, fp_ciq2, fp_ciq3, fp_cblks, iq2, iq3);
             static const bool fp_dbg = getenv("GGML_SPACEMIT_FA_FP_DEBUG") != nullptr;
             if (fp_dbg) {

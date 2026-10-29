@@ -1,0 +1,14 @@
+{
+ "tag": "clean_base",
+ "model": "ssm_all_k128.gguf",
+ "spec": "none",
+ "prompts": "qa",
+ "max_tokens": 128,
+ "out_tps": 4.75,
+ "ttft_ms": 1091.2,
+ "tpot_ms": 194.8,
+ "acceptance": null,
+ "mean_len": null,
+ "degenerate": false,
+ "evalscope_rc": 0
+}

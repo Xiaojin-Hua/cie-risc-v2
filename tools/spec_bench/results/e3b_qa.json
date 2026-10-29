@@ -1,0 +1,14 @@
+{
+ "tag": "e3b_qa",
+ "model": "ssm_all_k128.gguf",
+ "spec": "--spec-type draft-eagle3 --spec-draft-n-max 3 --spec-draft-model /home/bianbu/kwork/specdecode/e3b_q4.gguf",
+ "prompts": "qa",
+ "max_tokens": 128,
+ "out_tps": 0.28,
+ "ttft_ms": 5676.5,
+ "tpot_ms": 1576.6,
+ "acceptance": 0.31122,
+ "mean_len": 1.92,
+ "degenerate": false,
+ "evalscope_rc": 0
+}

@@ -1,0 +1,14 @@
+{
+ "tag": "ng_k1_qa",
+ "model": "ssm_all_k128.gguf",
+ "spec": "--spec-type ngram-simple --spec-ngram-simple-size-n 3 --spec-ngram-simple-size-m 3 --spec-draft-n-max 1",
+ "prompts": "qa",
+ "max_tokens": 128,
+ "out_tps": 4.71,
+ "ttft_ms": 1086.6,
+ "tpot_ms": 205.5,
+ "acceptance": 0.39286,
+ "mean_len": 2.1,
+ "degenerate": false,
+ "evalscope_rc": 0
+}
