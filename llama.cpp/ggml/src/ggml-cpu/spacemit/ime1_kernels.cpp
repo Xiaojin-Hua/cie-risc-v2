@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <stdexcept>
 
 #if !defined(__riscv_v) || !defined(__riscv_v_intrinsic)
@@ -94,7 +96,126 @@ namespace spacemit_kernels {
     "vse8.v             v31, (s1)                \n\t"
 
 namespace ime1 {
+// [Q4_0_K128] BlkLen=128 activation quantiser for the IME1 M4 path.
+//
+// The vectorised BlkLen=64 routine above cannot form a 128-wide amax (e32/m8 caps VL at
+// 64), so this variant takes the max over two 64-lane passes and then quantises in
+// 8-value groups, which matches the payload layout the kernel reads:
+//   per 128-value block and 4-row group: [4 x f32 scales][512 B payload];
+//   payload group g (8 values per row) sits at 16 + 32g, row r at +8r.
+// Arithmetic mirrors the assembly exactly: scale = amax * (1/127); q = rne(a/scale)
+// with a real division by the scale; saturating narrowing to int8.
+static void quantize_a_4row_i8_k128(const float * GGML_RESTRICT A, size_t CountK, uint8_t * GGML_RESTRICT QuantA) {
+    constexpr size_t  BlkLen                = 128;
+    constexpr float   range_max_reciprocal  = 1.0f / ((1 << 7) - 1);
+
+    GGML_ASSERT(CountK % BlkLen == 0);
+    const size_t nblk = CountK / BlkLen;
+
+    for (size_t b = 0; b < nblk; ++b) {
+        uint8_t * dst = QuantA + b * 4 * (sizeof(float) + BlkLen);
+
+        for (int r = 0; r < 4; ++r) {
+            const float * src = A + r * CountK + b * BlkLen;
+
+            const vfloat32m8_t v0 = __riscv_vle32_v_f32m8(src,      64);
+            const vfloat32m8_t v1 = __riscv_vle32_v_f32m8(src + 64, 64);
+            const vfloat32m8_t vm = __riscv_vfmax_vv_f32m8(__riscv_vfabs_v_f32m8(v0, 64),
+                                                           __riscv_vfabs_v_f32m8(v1, 64), 64);
+            const vfloat32m1_t red =
+                __riscv_vfredmax_vs_f32m8_f32m1(vm, __riscv_vfmv_s_f_f32m1(0.0f, 1), 64);
+            const float amax = __riscv_vfmv_f_s_f32m1_f32(red);
+
+            const float scale = amax * range_max_reciprocal;
+            const float inv   = scale != 0.0f ? 1.0f / scale : 0.0f;
+            memcpy(dst + r * sizeof(float), &scale, sizeof(float));
+
+            uint8_t * out = dst + 16 + 8 * r;
+            for (size_t g = 0; g < BlkLen / 8; ++g) {
+                const vfloat32m1_t v = __riscv_vle32_v_f32m1(src + g * 8, 8);
+                const vfloat32m1_t q = __riscv_vfmul_vf_f32m1(v, inv, 8);
+                const vint32m1_t   i = __riscv_vfcvt_x_f_v_i32m1(q, 8);
+                const vint16mf2_t  h = __riscv_vnclip_wx_i16mf2(i, 0, 0, 8);
+                const vint8mf4_t   c = __riscv_vnclip_wx_i8mf4(h, 0, 0, 8);
+                __riscv_vse8_v_i8mf4((int8_t *) (out + 32 * g), c, 8);
+            }
+        }
+    }
+}
+
+// [A-offset fold] quantize_a_4row_i8_k128 plus the sum of the quantised int8 values over each
+// 128-value K block, for each of the 4 rows.  The sums are stored as the two int32
+// row-broadcast patterns the folded kernel subtracts, so the record becomes 592 B:
+//     [16 B scales][512 B payload][32 B Sa][32 B Sb]
+//     Sa = [8*S0 x4 | 8*S1 x4]   Sb = [8*S2 x4 | 8*S3 x4]
+// (row order follows SAVE_RESULT_4x16: even accumulator registers carry rows 0/1, odd ones
+//  rows 2/3).  A block stride therefore becomes 148 B per row per K block.
+//
+// Why this is bit-identical: the kernel computes sum_k a*(q-8) = sum_k a*q - 8*sum_k a.
+// `a` here is the stored int8 value.  The scale is amax/127, so |i| <= 127 is guaranteed and
+// the int32 -> int16 -> int8 narrowing below never saturates: summing `i` is exactly summing
+// the stored int8 values.  All of it is integer arithmetic.
+static void quantize_a_4row_i8_k128_sum(const float * GGML_RESTRICT A, size_t CountK, uint8_t * GGML_RESTRICT QuantA) {
+    constexpr size_t BlkLen    = 128;
+    // [16 B row scales][4 rows x 128 B payload][Sa (8 x int32)][Sb (8 x int32)] = 592 B,
+    // i.e. 148 B per row per K block -- must match spx_a_fold_extra_per_blk() in ime.cpp
+    constexpr size_t BlkStride = 4 * (sizeof(float) + BlkLen) + 2 * 8 * sizeof(int32_t);
+    constexpr float  range_max_reciprocal = 1.0f / ((1 << 7) - 1);
+
+    GGML_ASSERT(CountK % BlkLen == 0);
+    const size_t nblk = CountK / BlkLen;
+
+    for (size_t b = 0; b < nblk; ++b) {
+        uint8_t * dst = QuantA + b * BlkStride;
+        int32_t   srow[4] = { 0, 0, 0, 0 };
+
+        for (int r = 0; r < 4; ++r) {
+            const float * src = A + r * CountK + b * BlkLen;
+
+            const vfloat32m8_t v0 = __riscv_vle32_v_f32m8(src,      64);
+            const vfloat32m8_t v1 = __riscv_vle32_v_f32m8(src + 64, 64);
+            const vfloat32m8_t vm = __riscv_vfmax_vv_f32m8(__riscv_vfabs_v_f32m8(v0, 64),
+                                                           __riscv_vfabs_v_f32m8(v1, 64), 64);
+            const vfloat32m1_t red =
+                __riscv_vfredmax_vs_f32m8_f32m1(vm, __riscv_vfmv_s_f_f32m1(0.0f, 1), 64);
+            const float amax = __riscv_vfmv_f_s_f32m1_f32(red);
+
+            const float scale = amax * range_max_reciprocal;
+            const float inv   = scale != 0.0f ? 1.0f / scale : 0.0f;
+            memcpy(dst + r * sizeof(float), &scale, sizeof(float));
+
+            uint8_t * out = dst + 16 + 8 * r;
+            vint32m1_t sum = __riscv_vmv_v_x_i32m1(0, 8);
+            for (size_t g = 0; g < BlkLen / 8; ++g) {
+                const vfloat32m1_t v = __riscv_vle32_v_f32m1(src + g * 8, 8);
+                const vfloat32m1_t q = __riscv_vfmul_vf_f32m1(v, inv, 8);
+                const vint32m1_t   i = __riscv_vfcvt_x_f_v_i32m1(q, 8);
+                const vint16mf2_t  h = __riscv_vnclip_wx_i16mf2(i, 0, 0, 8);
+                const vint8mf4_t   c = __riscv_vnclip_wx_i8mf4(h, 0, 0, 8);
+                sum = __riscv_vadd_vv_i32m1(sum, i, 8);
+                __riscv_vse8_v_i8mf4((int8_t *) (out + 32 * g), c, 8);
+            }
+            const vint32m1_t rsum = __riscv_vredsum_vs_i32m1_i32m1(sum, __riscv_vmv_v_x_i32m1(0, 1), 8);
+            srow[r] = __riscv_vmv_x_s_i32m1_i32(rsum) * 8;
+        }
+        int32_t * pat = (int32_t *) (dst + 16 + 4 * BlkLen);  // right after the 4 rows x 128 B payload
+        __riscv_vse32_v_i32m1(pat + 0, __riscv_vmv_v_x_i32m1(srow[0], 4), 4);
+        __riscv_vse32_v_i32m1(pat + 4, __riscv_vmv_v_x_i32m1(srow[1], 4), 4);
+        __riscv_vse32_v_i32m1(pat + 8, __riscv_vmv_v_x_i32m1(srow[2], 4), 4);
+        __riscv_vse32_v_i32m1(pat + 12, __riscv_vmv_v_x_i32m1(srow[3], 4), 4);
+    }
+}
+
+void quantize_a_4row_i8_with_sum(size_t BlkLen, const float * A, size_t CountK, uint8_t * QuantA) {
+    GGML_ASSERT(BlkLen == 128);
+    quantize_a_4row_i8_k128_sum(A, CountK, QuantA);
+}
+
 void quantize_a_4row_i8(size_t BlkLen, const float * A, size_t CountK, uint8_t * QuantA) {
+    if (BlkLen == 128) { // QK4_0_K128
+        quantize_a_4row_i8_k128(A, CountK, QuantA);
+        return;
+    }
     constexpr float range_max_reciprocal = 1.0f / ((1 << 7) - 1);
     const float     fone                 = 1.0f;
 
@@ -166,36 +287,41 @@ void quantize_a_4row_i8(size_t BlkLen, const float * A, size_t CountK, uint8_t *
 // O(K*N) GEMM.
 static void quantize_a_row_i8_ref(size_t BlkLen, const float * A, size_t CountK, uint8_t * QuantA) {
     const float  range_max_reciprocal = 1.0f / ((1 << 7) - 1);
-    const float  fone                 = 1.0f;
     const size_t nblk                 = (CountK + BlkLen - 1) / BlkLen;
+    const size_t vmax                 = __riscv_vsetvlmax_e32m8();
 
     for (size_t b = 0; b < nblk; ++b) {
-        const size_t off = b * BlkLen;
-        const size_t n   = (off + BlkLen <= CountK) ? BlkLen : (CountK - off);
+        const size_t  off = b * BlkLen;
+        const size_t  n   = (off + BlkLen <= CountK) ? BlkLen : (CountK - off);
+        const float * src = A + off;
+        uint8_t *     dst = QuantA + b * (sizeof(float) + BlkLen);
 
-        float amax = 0.0f;
-        for (size_t i = 0; i < n; ++i) {
-            const float v = fabsf(A[off + i]);
-            if (v > amax) {
-                amax = v;
-            }
+        vfloat32m8_t mx = __riscv_vfmv_v_f_f32m8(0.0f, vmax);
+        for (size_t k = 0; k < n;) {
+            const size_t vl = __riscv_vsetvl_e32m8(n - k);
+            const vfloat32m8_t x = __riscv_vle32_v_f32m8(src + k, vl);
+            mx = __riscv_vfmax_vv_f32m8_tu(mx, mx, __riscv_vfabs_v_f32m8(x, vl), vl);
+            k += vl;
         }
+        const float amax =
+            __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredmax_vs_f32m8_f32m1(mx, __riscv_vfmv_v_f_f32m1(0.0f, 1), vmax));
 
         const float scale = amax * range_max_reciprocal;
-        const float rep   = scale ? fone / scale : 0.0f;
-
-        uint8_t * dst = QuantA + b * (sizeof(float) + BlkLen);
+        const float rep   = scale ? 1.0f / scale : 0.0f;
         memcpy(dst, &scale, sizeof(float));
 
         int8_t * q = reinterpret_cast<int8_t *>(dst + sizeof(float));
-        for (size_t i = 0; i < n; ++i) {
-            long v = lrintf(A[off + i] * rep);
-            if (v >  127) { v =  127; }
-            if (v < -128) { v = -128; }
-            q[i] = static_cast<int8_t>(v);
+        for (size_t k = 0; k < n;) {
+            const size_t vl = __riscv_vsetvl_e32m8(n - k);
+            const vfloat32m8_t x = __riscv_vle32_v_f32m8(src + k, vl);
+            const vint32m8_t   i = __riscv_vfcvt_x_f_v_i32m8(__riscv_vfmul_vf_f32m8(x, rep, vl), vl);
+            const vint16m4_t   h = __riscv_vnclip_wx_i16m4(i, 0, 0, vl);
+            const vint8m2_t    c = __riscv_vnclip_wx_i8m2(h, 0, 0, vl);
+            __riscv_vse8_v_i8m2(q + k, c, vl);
+            k += vl;
         }
-        for (size_t i = n; i < BlkLen; ++i) {
-            q[i] = 0;
+        for (size_t t = n; t < BlkLen; ++t) {
+            q[t] = 0;
         }
     }
 }
@@ -497,6 +623,56 @@ namespace {
     "vfmul.vf     v13, v13, f4, v0.t      \n\t" \
     "vfmul.vf     v15, v15, f4, v0.t      \n\t"
 
+// [Q4_0_K128 / scale-build] Drop-in replacement for LOAD_SCALE_4x16_FP16.
+//
+// The original writes the A row scales with 8 masked `vfmul.vf` plus 4 `vmv.v.v`
+// copies (44 instructions).  Here the two merged A-scale vectors are prebuilt once
+// (v2 = [As0 x4 | As1 x4], v3 = [As2 x4 | As3 x4]) and the combined scale becomes
+// 8 unmasked `vfmul.vv`, which is 32 instructions for the same maths.
+//
+// Equivalence: with vle16 mf4 (4 halfwords) the low half of stage 2 is the 4 row
+// scales and the lane-4..7 half is self, so vfwcvt gives v4=[Bs0..3 | Bs0..3],
+// v5=[Bs4..7 | Bs4..7], and so on.  The vmadot 4x4 sub-tile for rows r..r+3 is pair
+// (r/4), so v16..v23 need scales {As0,As2} for pair 0 and {As1,As3} for pair 1 --
+// exactly what v2/v3 place in lanes 0..3 / 4..7.  Hence v8..v15 are bit-identical
+// to the original and the kernel output is unchanged.
+// Clobbers v0, v2..v15 and s2,s3,s4,s6 -- all of which the original macro already
+// clobbers, and every s-register here is recomputed at the top of each n-tile pass.
+#define LOAD_SCALE_4x16_FP16_OPT                \
+    "addi         s2, s5, -8              \n\t" \
+    "addi         s3, s5, 8               \n\t" \
+    "addi         s4, s5, 16              \n\t" \
+    "addi         s6, s5, 24              \n\t" \
+    "li           t1, 0xf0                \n\t" \
+    "vmv.s.x      v0, t1                  \n\t" \
+    "vsetvli      t0, zero, e16, mf4      \n\t" \
+    "vle16.v      v9, (s5)                \n\t" \
+    "vle16.v      v11, (s3)               \n\t" \
+    "vle16.v      v13, (s4)               \n\t" \
+    "vle16.v      v15, (s6)               \n\t" \
+    "vsetvli      t0, zero, e16, mf2      \n\t" \
+    "vle16.v      v9, (s2), v0.t          \n\t" \
+    "vle16.v      v11, (s5), v0.t         \n\t" \
+    "vle16.v      v13, (s3), v0.t         \n\t" \
+    "vle16.v      v15, (s4), v0.t         \n\t" \
+    "vfwcvt.f.f.v v4, v9                  \n\t" \
+    "vfwcvt.f.f.v v5, v11                 \n\t" \
+    "vfwcvt.f.f.v v6, v13                 \n\t" \
+    "vfwcvt.f.f.v v7, v15                 \n\t" \
+    "vsetvli      t0, zero, e32, m1       \n\t" \
+    "vfmv.v.f     v2, f1                  \n\t" \
+    "vfmerge.vfm  v2, v2, f2, v0          \n\t" \
+    "vfmv.v.f     v3, f3                  \n\t" \
+    "vfmerge.vfm  v3, v3, f4, v0          \n\t" \
+    "vfmul.vv     v8, v4, v2              \n\t" \
+    "vfmul.vv     v9, v4, v3              \n\t" \
+    "vfmul.vv     v10, v5, v2             \n\t" \
+    "vfmul.vv     v11, v5, v3             \n\t" \
+    "vfmul.vv     v12, v6, v2             \n\t" \
+    "vfmul.vv     v13, v6, v3             \n\t" \
+    "vfmul.vv     v14, v7, v2             \n\t" \
+    "vfmul.vv     v15, v7, v3             \n\t"
+
 // [s2|s5, s3, s4, s6]
 #define LOAD_SCALE_4x16                         \
     "addi         s2, s5, -16             \n\t" \
@@ -633,7 +809,7 @@ namespace {
     "vrgather.vv  v15, v11, v1            \n\t" \
     "vadd.vi      v1, v1, -12             \n\t"
 
-template <bool HasZeroPoint>
+template <bool HasZeroPoint, bool FoldOffset = false>
 void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
                                                 const uint8_t * QuantA,
                                                 const uint8_t * QuantBData,
@@ -717,7 +893,7 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
                 "addi               t2, t2, -1                  \n\t"
                 "bnez               t2, BLOCK_INNER_LOOP%=      \n\t"
 
-                LOAD_SCALE_4x16_FP16
+                LOAD_SCALE_4x16_FP16_OPT
 
                 "vsetvli            t0, zero, e32, m8           \n\t"
                 "vfcvt.f.x.v        v16, v16                    \n\t"
@@ -735,7 +911,7 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
                 : "cc", "t0", "t1", "t2", "t3", "a1", "a2", "a3", "a4", "f1", "f2", "f3", "f4", "s1", "s2", "s3", "s4",
                   "s5", "s6");
         }
-    } else {
+    } else if constexpr (!FoldOffset) {
         for (size_t n = 0; n < CountN; n += 16) {
             size_t    NBLKS         = (CountN - n) > 16 ? 16 : CountN - n;
             uint8_t * QuantBDataPtr = (uint8_t *) QuantBData +             //
@@ -753,13 +929,13 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
                 "addi               t3, %[BlockCountK], 0       \n\t"
                 "addi               a1, %[A], 0                 \n\t"
                 "addi               s1, %[B], 0                 \n\t"
+                "vsetvli            t0, zero, e32, m8           \n\t"
                 "BLOCK_COUNTK_LOOP%=:                           \n\t"
                 "addi               s5, s1, 0                   \n\t"
                 "addi               s1, s5, 32                  \n\t"
                 "addi               s2, s1, 32                  \n\t"
                 "addi               s3, s1, 32*2                \n\t"
                 "addi               s4, s1, 32*3                \n\t"
-                "vsetvli            t0, zero, e32, m8           \n\t"
                 "vxor.vv            v16, v16, v16               \n\t"
                 // load a scale
                 "flw                f1, (a1)                    \n\t"
@@ -772,7 +948,6 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
 
                 LOAD_B_16x8x2
 
-                "vsetvli            t0, zero, e8, m1            \n\t"
                 "vle8.v             v10, (a1)                   \n\t"
                 "addi               a1, a1, 32                  \n\t"
                 "vle8.v             v11, (a1)                   \n\t"
@@ -791,7 +966,94 @@ void SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl(size_t          BlkLen,
                 "addi               t2, t2, -1                  \n\t"
                 "bnez               t2, BLOCK_INNER_LOOP%=      \n\t"
 
-                LOAD_SCALE_4x16_FP16
+                LOAD_SCALE_4x16_FP16_OPT
+
+                "vsetvli            t0, zero, e32, m8           \n\t"
+                "vfcvt.f.x.v        v16, v16                    \n\t"
+                "vfmacc.vv          v24, v16, v8                \n\t"
+                "addi               t3, t3, -1                  \n\t"
+                "bnez               t3, BLOCK_COUNTK_LOOP%=     \n\t"
+                "RESULT_SAVE%=:                                 \n\t"
+
+                SAVE_RESULT_4x16
+
+                :
+                : [INNER] "r"(INNER), [A] "r"(QuantA), [B] "r"(QuantBDataPtr), [LDC] "r"(LDC),
+                  [BlockCountK] "r"(BlockCountK), [C] "r"(CPtr)
+                : "cc", "t0", "t1", "t2", "t3", "a1", "a2", "a3", "a4", "f1", "f2", "f3", "f4", "s1", "s2", "s3", "s4",
+                  "s5", "s6");
+        }
+    } else {
+        // [A-offset fold] Same loop as the branch above, with the B zero-point shift moved from
+        // "8 vector ops per inner iteration" to "one integer correction per K block":
+        //     sum_k a*(q-8) = sum_k a*q - 8*sum_k a
+        // `a` is the quantised int8 activation.  quantize_a_4row_i8_with_sum() stores 8*sum_k a
+        // per row as the two int32 row-broadcast patterns read below, so the correction is
+        // exact integer arithmetic and C is bit-identical to the un-folded kernel.
+        for (size_t n = 0; n < CountN; n += 16) {
+            size_t    NBLKS         = (CountN - n) > 16 ? 16 : CountN - n;
+            uint8_t * QuantBDataPtr = (uint8_t *) QuantBData +             //
+                                      n * BlockCountK * BlkLen / 2 +       // b data
+                                      n * BlockCountK * sizeof(_Float16);  // scale
+            float * CPtr = C + n;
+            if (NBLKS < 16) {
+                CPtr = tmp;
+                LDC  = 16 * sizeof(float);
+            }
+
+            __asm__ volatile(
+                "vsetvli            t0, zero, e32, m8           \n\t"
+                "vxor.vv            v24, v24, v24               \n\t"
+                "addi               t3, %[BlockCountK], 0       \n\t"
+                "addi               a1, %[A], 0                 \n\t"
+                "addi               s1, %[B], 0                 \n\t"
+                "vsetvli            t0, zero, e32, m8           \n\t"
+                "BLOCK_COUNTK_LOOP%=:                           \n\t"
+                "addi               s5, s1, 0                   \n\t"
+                "addi               s1, s5, 32                  \n\t"
+                "addi               s2, s1, 32                  \n\t"
+                "addi               s3, s1, 32*2                \n\t"
+                "addi               s4, s1, 32*3                \n\t"
+                "vxor.vv            v16, v16, v16               \n\t"
+                // load a scale
+                "flw                f1, (a1)                    \n\t"
+                "flw                f2, 4(a1)                   \n\t"
+                "flw                f3, 8(a1)                   \n\t"
+                "flw                f4, 12(a1)                  \n\t"
+                "addi               a1, a1, 16                  \n\t"
+                "addi               t2, %[INNER], 0             \n\t"
+                "BLOCK_INNER_LOOP%=:                            \n\t"
+
+                LOAD_B_16x8x2
+
+                "vle8.v             v10, (a1)                   \n\t"
+                "addi               a1, a1, 32                  \n\t"
+                "vle8.v             v11, (a1)                   \n\t"
+                "addi               a1, a1, 32                  \n\t"
+                // the 8 per-iteration `vadd.vi -8` live here in the un-folded branch
+
+                SQ4BIT_KERNEL_COMP_4x16x16
+
+                "addi               t2, t2, -1                  \n\t"
+                "bnez               t2, BLOCK_INNER_LOOP%=      \n\t"
+
+                // one zero-point correction for the whole K block: a1 now points at the two
+                // 32 B row-broadcast patterns that follow this block's 512 B payload
+                "vsetvli            t0, zero, e32, m1           \n\t"
+                "vle32.v            v15, (a1)                   \n\t"
+                "addi               a1, a1, 32                  \n\t"
+                "vle32.v            v14, (a1)                   \n\t"
+                "addi               a1, a1, 32                  \n\t"
+                "vsub.vv            v16, v16, v15               \n\t"
+                "vsub.vv            v17, v17, v14               \n\t"
+                "vsub.vv            v18, v18, v15               \n\t"
+                "vsub.vv            v19, v19, v14               \n\t"
+                "vsub.vv            v20, v20, v15               \n\t"
+                "vsub.vv            v21, v21, v14               \n\t"
+                "vsub.vv            v22, v22, v15               \n\t"
+                "vsub.vv            v23, v23, v14               \n\t"
+
+                LOAD_SCALE_4x16_FP16_OPT
 
                 "vsetvli            t0, zero, e32, m8           \n\t"
                 "vfcvt.f.x.v        v16, v16                    \n\t"
@@ -1124,6 +1386,26 @@ size_t gemm_kernel_i8i4(size_t          blk_len,
         }
         return 1;
     }
+}
+
+// [A-offset fold] Entry point for the folded kernel.  Only the BlkLen=128 / count_m>=4 /
+// no-zero-point path has the folded correction; anything else falls back to gemm_kernel_i8i4
+// (ime.cpp only selects this when the A operand came from quantize_a_4row_i8_with_sum).
+size_t gemm_kernel_i8i4_fold(size_t          blk_len,
+                             const uint8_t * quant_a_ptr,
+                             const uint8_t * quant_b_data,
+                             const uint8_t * quant_b_zp,
+                             float *         c_ptr,
+                             size_t          count_m,
+                             size_t          count_n,
+                             size_t          k_blks,
+                             size_t          ldc) {
+    if (blk_len != 128 || count_m < 4 || quant_b_zp != nullptr) {
+        return gemm_kernel_i8i4(blk_len, quant_a_ptr, quant_b_data, quant_b_zp, c_ptr, count_m, count_n, k_blks, ldc);
+    }
+    SQ4BitGemmM4Kernel_CompInt8_ScaleFp16_Impl<false, true>(blk_len, quant_a_ptr, quant_b_data, c_ptr, count_n, k_blks,
+                                                            ldc);
+    return 4;
 }
 
 // ----------------------------------------------------------------------------

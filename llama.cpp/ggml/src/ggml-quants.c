@@ -457,6 +457,67 @@ void dequantize_row_q2_0(const block_q2_0 * GGML_RESTRICT x, float * GGML_RESTRI
 }
 
 // ---------------------------------------------------------------------------
+// [Q4_0_K128] same arithmetic as Q4_0_K64 (d = -max/8, code = clamp(floor(x/d+8.5),0,15),
+// value = d*(code-8)); block width 64 -> 128, so one scale serves 128 weights.
+// ---------------------------------------------------------------------------
+void dequantize_row_q4_0_k128(const block_q4_0_k128 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
+    assert(k % QK4_0_K128 == 0);
+    const int64_t nb = k / QK4_0_K128;
+
+    for (int64_t i = 0; i < nb; i++) {
+        const float d = GGML_FP16_TO_FP32(x[i].d);
+
+        for (int64_t h = 0; h < 4; ++h) {
+            const uint8_t * qs = x[i].qs + h*(QK4_0_K128/8);
+            for (int64_t j = 0; j < QK4_0_K128/8; ++j) {
+                const int x0 = (qs[j] & 0x0F) - 8;
+                const int x1 = (qs[j] >>   4) - 8;
+
+                y[i*QK4_0_K128 + h*(QK4_0_K128/4) + j]                = x0*d;
+                y[i*QK4_0_K128 + h*(QK4_0_K128/4) + j + QK4_0_K128/8] = x1*d;
+            }
+        }
+    }
+}
+
+void quantize_row_q4_0_k128_ref(const float * GGML_RESTRICT x, block_q4_0_k128 * GGML_RESTRICT y, int64_t k) {
+    assert(k % QK4_0_K128 == 0);
+    const int64_t nb = k / QK4_0_K128;
+
+    for (int64_t i = 0; i < nb; i++) {
+        float amax = 0.0f;
+        float max  = 0.0f;
+
+        for (int64_t j = 0; j < QK4_0_K128; j++) {
+            const float v = x[i*QK4_0_K128 + j];
+            if (amax < fabsf(v)) {
+                amax = fabsf(v);
+                max  = v;
+            }
+        }
+
+        const float d  = max / -8;
+        const float id = d ? 1.0f/d : 0.0f;
+
+        y[i].d = GGML_FP32_TO_FP16(d);
+
+        for (int64_t h = 0; h < 4; ++h) {
+            uint8_t * qs = y[i].qs + h*(QK4_0_K128/8);
+            for (int64_t j = 0; j < QK4_0_K128/8; ++j) {
+                const float x0 = x[i*QK4_0_K128 + h*(QK4_0_K128/4) + j]*id;
+                const float x1 = x[i*QK4_0_K128 + h*(QK4_0_K128/4) + j + QK4_0_K128/8]*id;
+
+                const uint8_t xi0 = MIN(15, (int8_t)(x0 + 8.5f));
+                const uint8_t xi1 = MIN(15, (int8_t)(x1 + 8.5f));
+
+                qs[j]  = xi0;
+                qs[j] |= xi1 << 4;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // [Q4_0_K64] same arithmetic as Q4_0 (d = -max/8, code = clamp(floor(x/d+8.5),0,15),
 // value = d*(code-8)); only the block width changes 32 -> 64.
 // ---------------------------------------------------------------------------

@@ -22,6 +22,14 @@
 #    include "spacemit/ime.h"
 #endif
 
+int ggml_cpu_get_num_math_cores(void) {
+#if defined(GGML_USE_CPU_RISCV64_SPACEMIT)
+    return ggml_backend_cpu_riscv64_spacemit_num_perfer_cores();
+#else
+    return 0;
+#endif
+}
+
 #if defined(_WIN32)
 #    define WIN32_LEAN_AND_MEAN
 #    ifndef NOMINMAX

@@ -3802,7 +3802,7 @@ class tinyBLAS_PPC {
  * @param Ctype is GGML data type of `C`
  * @return true if this function was able to service the matmul request
  */
-bool llamafile_sgemm(const struct ggml_compute_params * params, int64_t m, int64_t n, int64_t k,
+static bool llamafile_sgemm_impl(const struct ggml_compute_params * params, int64_t m, int64_t n, int64_t k,
                      const void *A, int64_t lda, const void *B, int64_t ldb, void *C,
                      int64_t ldc, int Atype, int Btype, int Ctype) {
 
@@ -4161,4 +4161,24 @@ bool llamafile_sgemm(const struct ggml_compute_params * params, int64_t m, int64
     (void)Atype;
     (void)Btype;
     (void)Ctype;
+}
+
+// ---- probe wrapper (added by patch_sgemm_trace.py, env gated) ----------------
+bool llamafile_sgemm(const struct ggml_compute_params * params, int64_t m, int64_t n, int64_t k,
+                     const void *A, int64_t lda, const void *B, int64_t ldb, void *C,
+                     int64_t ldc, int Atype, int Btype, int Ctype) {
+    const bool ok = llamafile_sgemm_impl(params, m, n, k, A, lda, B, ldb, C, ldc, Atype, Btype, Ctype);
+
+    static int trace = -1;
+    if (trace < 0) {
+        const char * e = getenv("GGML_SPACEMIT_SGEMM_TRACE");
+        trace = (e != NULL && e[0] == '1') ? 1 : 0;
+    }
+    if (trace) {
+        fprintf(stderr, "[spxgemm] m=%lld n=%lld k=%lld A=%s B=%s C=%s ok=%d\n",
+                (long long) m, (long long) n, (long long) k,
+                ggml_type_name((enum ggml_type) Atype), ggml_type_name((enum ggml_type) Btype),
+                ggml_type_name((enum ggml_type) Ctype), (int) ok);
+    }
+    return ok;
 }

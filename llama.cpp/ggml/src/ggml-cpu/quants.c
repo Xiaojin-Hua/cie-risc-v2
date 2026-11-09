@@ -264,6 +264,39 @@ void ggml_vec_dot_q4_0_k64_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const
     *s = sumf;
 }
 
+void quantize_row_q4_0_k128(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
+    quantize_row_q4_0_k128_ref(x, (block_q4_0_k128 *) y, k);
+}
+
+void ggml_vec_dot_q4_0_k128_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
+    const int qk = QK4_0_K128;
+    const int nb = n / qk;
+
+    const block_q4_0_k128 * GGML_RESTRICT x = vx;
+    const block_q8_0     * GGML_RESTRICT y = vy;
+
+    enum { CH = 8 };
+    block_q4_0 tmp[4*CH];
+    float sumf = 0;
+
+    for (int ib = 0; ib < nb; ib += CH) {
+        const int c = (nb - ib < CH) ? (nb - ib) : CH;
+
+        for (int t = 0; t < c; ++t) {
+            for (int h = 0; h < 4; ++h) {
+                tmp[4*t + h].d = x[ib + t].d;
+                memcpy(tmp[4*t + h].qs, x[ib + t].qs + 16*h, 16);
+            }
+        }
+
+        float part = 0.0f;
+        ggml_vec_dot_q4_0_q8_0(c*qk, &part, 0, tmp, 0, y + 4*ib, 0, 1);
+        sumf += part;
+    }
+
+    *s = sumf;
+}
+
 void ggml_vec_dot_q4_0_q8_0_generic(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
     const int qk = QK8_0;
     const int nb = n / qk;

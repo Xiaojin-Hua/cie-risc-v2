@@ -27,6 +27,8 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdio>  // for GGML_ASSERT
+#include <cstdlib>  // for getenv (FA probe)
+#include <mutex>    // for std::call_once in the A-quantisation cache
 #include <stdexcept>
 #include <thread>
 // clang-format off
@@ -81,6 +83,128 @@ struct TLSContext {
 
 thread_local TLSContext tls_context;
 
+extern "C" int ggml_threadpool_graph_id(struct ggml_threadpool * tp);
+
+// ---- cross-node A quantisation cache (env GGML_SPACEMIT_A_DEDUP, default on) ----
+//
+// Several MUL_MAT nodes consume the *same* activation with the same (M, K, block length):
+// attn_post_norm -> ffn_up + ffn_gate, attn_norm -> wqkv + wqkv_gate, attn_norm -> wq/wk/wv,
+// ced_attn_norm -> up/gate, and l_out-15 -> the four CED k/v projections.  Today each of them
+// re-quantises the whole activation into its own per-node workspace.  Measured redundancy in
+// the production model: 149 quantise passes per ubatch over only 94 distinct activations;
+// 64% of the fp32 bytes the quantisers read are re-reads of an activation already quantised.
+//
+// Correctness rests on four things:
+//   * the key is (graph id, tensor name, M, K, block length).  The graph id comes from
+//     ggml_threadpool::n_graph, which the pool bumps once per graph *before* the workers wake,
+//     so every thread agrees on it; it is what invalidates the cache between ubatches.
+//   * hit/miss is decided against the *committed* key, and thread 0 commits only after the
+//     quantise barrier.  So during a node every thread sees the same key, and on a miss every
+//     thread fills its own row slice -- the fill is collective.
+//   * the buffer is allocated once via std::call_once and never reallocated; a call whose
+//     workspace does not fit simply bypasses the cache.
+//   * single-threaded pools do not advance n_graph, so the cache is disabled when nth == 1.
+// Direct-mapped: 8 slots, each big enough for the largest *duplicated* activation
+// (M=512, K=2048 -> 1.03 MiB).  K=6144 activations need 3.2 MiB and have no duplicate
+// consumer, so they simply bypass the cache.
+static const int    SPX_A_DEDUP_SLOTS      = 8;
+static const size_t SPX_A_DEDUP_SLOT_BYTES = (size_t) 2 << 20;  // 16 MiB total, allocated once
+
+struct ADedupCache {
+    bool      on  = false;
+    uint8_t * buf = nullptr;
+
+    int64_t gen[SPX_A_DEDUP_SLOTS];
+    int64_t m[SPX_A_DEDUP_SLOTS];
+    int64_t k[SPX_A_DEDUP_SLOTS];
+    int64_t blk[SPX_A_DEDUP_SLOTS];
+    char    name[SPX_A_DEDUP_SLOTS][48];
+
+    ADedupCache() {
+        const char * e = getenv("GGML_SPACEMIT_A_DEDUP");
+        on             = (e == nullptr || e[0] != '0');
+        for (int i = 0; i < SPX_A_DEDUP_SLOTS; i++) {
+            gen[i] = -1; m[i] = k[i] = blk[i] = 0; name[i][0] = 0;
+        }
+    }
+    bool usable(int nth) const { return on && nth > 1; }
+
+    // every thread derives the same slot from the key, so the fill is collective and the
+    // commit target is unambiguous
+    static int slot_of(const char * nm, int64_t mm, int64_t kk, int64_t bb) {
+        uint64_t h = 1469598103934665603ULL;
+        for (const char * p = nm; p != nullptr && *p != 0; ++p) {
+            h ^= (uint64_t) (uint8_t) *p;
+            h *= 1099511628211ULL;
+        }
+        h ^= (uint64_t) mm * 1000003ULL;
+        h *= 1099511628211ULL;
+        h ^= (uint64_t) kk * 1000033ULL;
+        h *= 1099511628211ULL;
+        h ^= (uint64_t) bb;
+        return (int) (h % (uint64_t) SPX_A_DEDUP_SLOTS);
+    }
+    bool ensure(size_t need) {
+        if (need > SPX_A_DEDUP_SLOT_BYTES) {
+            return false;
+        }
+        static std::once_flag once;
+        std::call_once(once, [this] {
+            buf = (uint8_t *) malloc(SPX_A_DEDUP_SLOT_BYTES * (size_t) SPX_A_DEDUP_SLOTS);
+        });
+        return buf != nullptr;
+    }
+    uint8_t * slot(int s) const { return buf + (size_t) s * SPX_A_DEDUP_SLOT_BYTES; }
+    bool match(int s, int64_t g, const char * nm, int64_t mm, int64_t kk, int64_t bb) const {
+        return gen[s] == g && m[s] == mm && k[s] == kk && blk[s] == bb && nm != nullptr &&
+               strcmp(name[s], nm) == 0;
+    }
+    void commit(int s, int64_t g, const char * nm, int64_t mm, int64_t kk, int64_t bb) {
+        gen[s] = g;
+        m[s]   = mm;
+        k[s]   = kk;
+        blk[s] = bb;
+        snprintf(name[s], sizeof(name[s]), "%s", nm != nullptr ? nm : "");
+    }
+};
+static ADedupCache g_adedup;
+
+// ---- A-offset fold (env GGML_SPACEMIT_A_FOLD=1) ----------------------------
+// The Q4_0_K128 M4 inner loop carries 8 `vadd.vi -8` per iteration to undo the B nibble
+// zero point.  Since
+//     sum_k a*(q-8) = sum_k a*q - 8*sum_k a
+// and `sum_k a` only depends on the (4-row, K-block) A slice, the correction can be applied
+// once per K block instead of once per iteration.  quantize_a_4row_i8_with_sum() emits it as
+// two int32 row-broadcast patterns (64 B) appended to each 592 B A block record, so the A
+// stride grows by 16 B per row per K block.  Integer arithmetic throughout => bit-identical.
+static bool spx_a_fold_enabled() {
+    static const bool on = [] {
+        const char * e = getenv("GGML_SPACEMIT_A_FOLD");
+        return e == nullptr || e[0] != '0';  // default ON; GGML_SPACEMIT_A_FOLD=0 restores the
+                                             // per-iteration B zero-point shift
+    }();
+    return on;
+}
+
+static constexpr size_t spx_a_fold_extra_per_blk() {
+    // two int32 row-broadcast patterns (Sa, Sb) per 4-row x K-block group = 64 B,
+    // i.e. 16 B per row per K block on top of q8_blk_size(blk_len)
+    return 4 * sizeof(int32_t);
+}
+// hits / misses, printed when GGML_SPACEMIT_A_TRAFFIC=1 is set
+struct ADedupStats {
+    int64_t hit = 0, miss = 0, bypass = 0;
+    ~ADedupStats() {
+        const char * e = getenv("GGML_SPACEMIT_A_TRAFFIC");
+        if (e != nullptr && e[0] == '1' && (hit || miss)) {
+            fprintf(stderr, "[spxdedup] quantise passes: hit=%ld miss=%ld bypass=%ld (hit rate %.1f%%)\n",
+                    (long) hit, (long) miss, (long) bypass,
+                    100.0 * (double) hit / (double) (hit + miss));
+        }
+    }
+};
+static ADedupStats g_adedup_stats;
+
 template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> constexpr size_t get_repacked_block_type_size() {
     if constexpr (std::is_same_v<BLOC_TYPE, block_q6_K> || std::is_same_v<BLOC_TYPE, block_q8_0>) {
         return sizeof(block_q8_0);
@@ -88,6 +212,8 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> constexpr siz
         return sizeof(block_q4_0) * INTER_SIZE / QK4_0;
     } else if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0_k64>) {
         return sizeof(block_q4_0_k64) * INTER_SIZE / QK4_0_K64;
+    } else if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0_k128>) {
+        return sizeof(block_q4_0_k128) * INTER_SIZE / QK4_0_K128;
     } else if constexpr (std::is_same_v<BLOC_TYPE, block_q4_1> || std::is_same_v<BLOC_TYPE, block_q4_K>) {
         return (sizeof(block_q4_0) + sizeof(uint8_t)) * INTER_SIZE / QK4_1;
     } else if constexpr (std::is_same_v<BLOC_TYPE, block_q2_K>) {
@@ -136,9 +262,16 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     if constexpr (std::is_same_v<BLOC_TYPE, block_q2_K> || std::is_same_v<BLOC_TYPE, block_q3_K>) {
                         size =
                             spacemit_kernels::div_round_up(src1_nelements, QK_K) * spacemit_kernels::q8k_blk_size(QK_K);
-                    } else if constexpr (INTER_SIZE == QK4_0 || INTER_SIZE == QK4_0_K64) {
+                    } else if constexpr (INTER_SIZE == QK4_0 || INTER_SIZE == QK4_0_K64 || INTER_SIZE == QK4_0_K128) {
                         size = spacemit_kernels::div_round_up(src1_nelements, INTER_SIZE) *
                                spacemit_kernels::q8_blk_size(INTER_SIZE, true);
+                        if constexpr (INTER_SIZE == QK4_0_K128) {
+                            // [A-offset fold] the folded A record is q8_blk_size(128) + 16 B per row
+                            if (spx_a_fold_enabled()) {
+                                size = spacemit_kernels::div_round_up(src1_nelements, INTER_SIZE) *
+                                       (spacemit_kernels::q8_blk_size(INTER_SIZE) + spx_a_fold_extra_per_blk());
+                            }
+                        }
                     } else if constexpr (INTER_SIZE == 256) {
                         size = spacemit_kernels::div_round_up(src1_nelements, 256) *
                                spacemit_kernels::q8_hp_blk_size(256, true, true);
@@ -157,7 +290,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     if constexpr (std::is_same_v<BLOC_TYPE, block_q2_K> || std::is_same_v<BLOC_TYPE, block_q3_K>) {
                         size =
                             spacemit_kernels::div_round_up(src1_nelements, QK_K) * spacemit_kernels::q8k_blk_size(QK_K);
-                    } else if constexpr (INTER_SIZE == QK4_0 || INTER_SIZE == QK4_0_K64) {
+                    } else if constexpr (INTER_SIZE == QK4_0 || INTER_SIZE == QK4_0_K64 || INTER_SIZE == QK4_0_K128) {
                         size = spacemit_kernels::div_round_up(src1_nelements, INTER_SIZE) *
                                spacemit_kernels::q8_blk_size(INTER_SIZE, true);
                     } else if constexpr (INTER_SIZE == 256) {
@@ -201,6 +334,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     case GGML_TYPE_Q5_1:
                     case GGML_TYPE_Q5_K:
                     case GGML_TYPE_Q4_0_K64:
+                    case GGML_TYPE_Q4_0_K128:
                         //case GGML_TYPE_MXFP4:
                         forward_mul_mat(params, op);
                         return true;
@@ -222,6 +356,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                     case GGML_TYPE_Q5_1:
                     case GGML_TYPE_Q5_K:
                     case GGML_TYPE_Q4_0_K64:
+                    case GGML_TYPE_Q4_0_K128:
                         //case GGML_TYPE_MXFP4:
                         forward_mul_mat_id(params, op);
                         return true;
@@ -322,7 +457,8 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             quantize_a_4row_i8 = spacemit_kernels::ime1::quantize_a_4row_i8;
 
             if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0> || std::is_same_v<BLOC_TYPE, block_q4_1> ||
-                          std::is_same_v<BLOC_TYPE, block_q4_K> || std::is_same_v<BLOC_TYPE, block_q4_0_k64>) {
+                          std::is_same_v<BLOC_TYPE, block_q4_K> || std::is_same_v<BLOC_TYPE, block_q4_0_k64> ||
+                          std::is_same_v<BLOC_TYPE, block_q4_0_k128>) {
                 gemm_kernel     = spacemit_kernels::ime1::gemm_kernel_i8i4;
                 set_kernel_impl = true;
             } else if constexpr (std::is_same_v<BLOC_TYPE, block_q8_0>) {
@@ -333,6 +469,16 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 #endif
         if (!set_kernel_impl) {
             GGML_ABORT("no kernel implementation found for the block type");
+        }
+
+        // [A-offset fold] switch the Q4_0_K128 M4 path to the folded zero-point kernel and the
+        // matching A layout.  Requires gemm_m % 4 == 0 because the tail rows would otherwise be
+        // quantised by the single-row quantiser, which does not emit the block sums.
+        if (spx_a_fold_enabled() && std::is_same_v<BLOC_TYPE, block_q4_0_k128> && gemm_m > 1 &&
+            (gemm_m % 4) == 0) {
+            block_stride_a     = spacemit_kernels::q8_blk_size(a_blk_len) + spx_a_fold_extra_per_blk();
+            quantize_a_4row_i8 = spacemit_kernels::ime1::quantize_a_4row_i8_with_sum;
+            gemm_kernel        = spacemit_kernels::ime1::gemm_kernel_i8i4_fold;
         }
 
         const int64_t a_k_blks = spacemit_kernels::div_round_up(gemm_k, a_blk_len);
@@ -350,7 +496,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
         void *        tcm_buffer      = ggml::cpu::riscv64_spacemit::tls_context.tcm_buffer;
         const int64_t tcm_buffer_size = ggml::cpu::riscv64_spacemit::tls_context.tcm_buffer_size;
 
-        auto * quant_a_buffer = reinterpret_cast<uint8_t *>(ws_ptr);
+        uint8_t * quant_a = reinterpret_cast<uint8_t *>(ws_ptr);
 
         constexpr int64_t row_align = 4;
         const int64_t     row_blks  = spacemit_kernels::div_round_up(gemm_m, row_align);
@@ -365,13 +511,94 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
         GGML_ASSERT(barrier_idx < spine_init_barrier_count);
         spine_barrier_t * cur_barrier = &global_spine_env_info.init_barrier[barrier_idx];
 
+
+        // ---- prefill phase profiler: GGML_SPACEMIT_MM_PHASES=1 -------------
+        struct MmPhaseStats {
+            struct Ent { int64_t m, n, k; char path; int64_t cnt, tq, tb, tg, tbc, bbc, aread; };
+            Ent     e[512];
+            int     n = 0;
+            bool    on = false;
+            MmPhaseStats() {
+                const char * s = getenv("GGML_SPACEMIT_MM_PHASES");
+                on = (s != NULL && s[0] == '1');
+            }
+            void add(int64_t m, int64_t n_, int64_t k, char path, int64_t tq, int64_t tb, int64_t tg,
+                     int64_t tbc, int64_t bbc, int64_t aread) {
+                if (!on) {
+                    return;
+                }
+                for (int i = 0; i < n; i++) {
+                    if (e[i].m == m && e[i].n == n_ && e[i].k == k && e[i].path == path) {
+                        e[i].cnt++; e[i].tq += tq; e[i].tb += tb; e[i].tg += tg;
+                        e[i].tbc += tbc; e[i].bbc += bbc; e[i].aread += aread;
+                        return;
+                    }
+                }
+                if (n < (int) (sizeof(e) / sizeof(e[0]))) {
+                    e[n].m = m; e[n].n = n_; e[n].k = k; e[n].path = path;
+                    e[n].cnt = 1; e[n].tq = tq; e[n].tb = tb; e[n].tg = tg;
+                    e[n].tbc = tbc; e[n].bbc = bbc; e[n].aread = aread;
+                    n++;
+                }
+            }
+            ~MmPhaseStats() {
+                if (!on || n == 0) {
+                    return;
+                }
+                int64_t T = 0;
+                for (int i = 0; i < n; i++) {
+                    T += e[i].tq + e[i].tb + e[i].tg;
+                }
+                fprintf(stderr, "[spxmm] ===== pid=%d spacemit MUL_MAT phases (thread0, wall) total %ld us =====\n",
+                        (int) getpid(), (long) T);
+                fprintf(stderr, "[spxmm] %-6s %-7s %-7s %-5s %-6s %-10s %-8s %-12s %-10s %-10s %-10s\n",
+                        "M", "N", "K", "path", "n", "quant_us", "bar_us", "gemm_us", "bcopy_us", "bcopy_B", "a_read_MB");
+                for (int i = 0; i < n; i++) {
+                    fprintf(stderr, "[spxmm] %-6ld %-7ld %-7ld %-5c %-6ld %-10ld %-8ld %-12ld %-10ld %-10ld %-10.2f\n",
+                            (long) e[i].m, (long) e[i].n, (long) e[i].k, e[i].path, (long) e[i].cnt,
+                            (long) e[i].tq, (long) e[i].tb, (long) e[i].tg,
+                            (long) e[i].tbc, (long) e[i].bbc, (double) e[i].aread / 1048576.0);
+                }
+                fprintf(stderr, "[spxmm] sums: quant=%ld bar=%ld gemm=%ld\n",
+                        (long) [&]{ int64_t s = 0; for (int i = 0; i < n; i++) s += e[i].tq; return s; }(),
+                        (long) [&]{ int64_t s = 0; for (int i = 0; i < n; i++) s += e[i].tb; return s; }(),
+                        (long) [&]{ int64_t s = 0; for (int i = 0; i < n; i++) s += e[i].tg; return s; }());
+            }
+        };
+        static MmPhaseStats g_mmph;
+        const bool    spx_mm  = g_mmph.on;
+        const int64_t spx_tq0 = spx_mm ? ggml_time_us() : 0;
+        int64_t       spx_bc_us = 0, spx_bc_bytes = 0, spx_aread = 0;
+
+        // ---- optional cross-node A quantisation cache ----
+        bool      a_dedup_use   = false;
+        bool      a_dedup_hit   = false;
+        int64_t   a_dedup_gen   = 0;
+        int       a_dedup_slot  = -1;
+        if (g_adedup.usable(nth) && gemm_m > 1 && src1->name[0] != 0) {
+            const size_t need = (size_t) gemm_m * (size_t) row_stride_a;
+            if (g_adedup.ensure(need)) {
+                a_dedup_slot = ADedupCache::slot_of(src1->name, gemm_m, gemm_k, (int64_t) a_blk_len);
+                a_dedup_gen  = ggml_threadpool_graph_id(params->threadpool);
+                a_dedup_use  = true;
+                quant_a      = g_adedup.slot(a_dedup_slot);
+                a_dedup_hit  = g_adedup.match(a_dedup_slot, a_dedup_gen, src1->name, gemm_m, gemm_k,
+                                              (int64_t) a_blk_len);
+            } else if (ith == 0) {
+                g_adedup_stats.bypass++;
+            }
+        }
+        if (a_dedup_use && ith == 0) {
+            if (a_dedup_hit) { g_adedup_stats.hit++; } else { g_adedup_stats.miss++; }
+        }
+        if (!a_dedup_hit) {
         if (gemm_m == 1) {
             int task_per_thread = spacemit_kernels::div_round_up(a_k_blks, nth);
             int a_blk_start     = ith * task_per_thread;
             int a_blk_end       = std::min(a_blk_start + task_per_thread, (int) a_k_blks);
             if (a_blk_start < a_blk_end) {
                 quantize_a_row_i8(a_blk_len, feature + a_blk_start * a_blk_len, (a_blk_end - a_blk_start) * a_blk_len,
-                                  quant_a_buffer + a_blk_start * block_stride_a);
+                                  quant_a + a_blk_start * block_stride_a);
             }
         } else {
             int task_per_thread = spacemit_kernels::div_round_up(row_blks, nth);
@@ -383,12 +610,12 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 
                 if (rows_tobe_handled == row_align && quantize_a_4row_i8 != nullptr) {
                     const float * a_row_ptr       = feature + m_idx * gemm_k;
-                    auto *        quant_a_row_ptr = quant_a_buffer + m_idx * row_stride_a;
+                    auto *        quant_a_row_ptr = quant_a + m_idx * row_stride_a;
                     quantize_a_4row_i8(a_blk_len, a_row_ptr, gemm_k, quant_a_row_ptr);
                 } else {
                     while (rows_tobe_handled) {
                         const float * a_row_ptr       = feature + m_idx * gemm_k;
-                        auto *        quant_a_row_ptr = quant_a_buffer + m_idx * row_stride_a;
+                        auto *        quant_a_row_ptr = quant_a + m_idx * row_stride_a;
                         quantize_a_row_i8(a_blk_len, a_row_ptr, gemm_k, quant_a_row_ptr);
                         rows_tobe_handled -= 1;
                         m_idx += 1;
@@ -396,8 +623,19 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 }
             }
         }
+        }  // !a_dedup_hit
+
+        const int64_t spx_tq1 = spx_mm ? ggml_time_us() : 0;
 
         ggml_barrier(params->threadpool);
+
+        if (a_dedup_use && ith == 0) {
+            // every thread has finished writing its row slice (barrier above), so the buffer is
+            // complete and the key can be published for the next consumer of this activation
+            g_adedup.commit(a_dedup_slot, a_dedup_gen, src1->name, gemm_m, gemm_k, (int64_t) a_blk_len);
+        }
+
+        const int64_t spx_tb1 = spx_mm ? ggml_time_us() : 0;
 
         const int64_t gemm_m_stride     = gemm_n / gemm_m > 64 ? gemm_m : 16;
         const int64_t gemm_m_blocked    = spacemit_kernels::div_round_up(gemm_m, gemm_m_stride);
@@ -414,8 +652,11 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
         static int mm_path = -2;
         if (mm_path == -2) {
             const char * e = getenv("GGML_SPACEMIT_MM_PATH");
-            // default = Path G (N-major) for prefill; set GGML_SPACEMIT_MM_PATH to override
-            mm_path = (e != NULL) ? (int) e[0] : 'g';
+            // default = Path F (weight-stationary, one B n-tile staged in TCM and every m row
+            // streamed through it) for prefill: measured +7.2% pp512 over Path G on
+            // Qwen3.5-2B/Q4_0_K64 (3/3 interleaved rounds).  When its slab precondition fails the
+            // chain falls through to the generic path.  Set GGML_SPACEMIT_MM_PATH to override.
+            mm_path = (e != NULL) ? (int) e[0] : 'f';
         }
         bool prefer_tcm = (gemm_m == 1);
         if (mm_path == 'b' || mm_path == 'B') {
@@ -459,17 +700,20 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 
         if (gemm_m == 1 && NB_COLS == 16 && ime1_int4 && vlen256 &&
             (mm_path == 'd' || mm_path == 'D')) {
-            const int64_t n_groups = gemm_n / NB_COLS;
+            // ceil, not floor: NB_COLS need not divide gemm_n (e.g. 2048 % 20 == 8); the last
+            // group is narrower and the M=1 kernel's tail path writes only the valid columns.
+            const int64_t n_groups = spacemit_kernels::div_round_up(gemm_n, NB_COLS);
             const int64_t gpt      = spacemit_kernels::div_round_up(n_groups, nth);
             const int64_t g_start  = std::min(static_cast<int64_t>(ith) * gpt, n_groups);
             const int64_t g_end    = std::min(g_start + gpt, n_groups);
 
             for (int64_t g = g_start; g < g_end; ++g) {
                 const int64_t n_off = g * NB_COLS;
+                const int64_t n_cnt = std::min<int64_t>(NB_COLS, gemm_n - n_off);
                 uint8_t *     b_col = reinterpret_cast<uint8_t *>(w_data) + n_off * row_stride_b;
                 uint8_t *     b_zp  = block_type_has_zp<BLOC_TYPE>() ? b_col : nullptr;
 
-                gemm_kernel(b_blk_len, quant_a_buffer, b_col, b_zp, output + n_off,
+                gemm_kernel(b_blk_len, quant_a, b_col, b_zp, output + n_off,
                             /*count_m=*/1, NB_COLS, b_k_blks, gemm_n);
             }
         } else if ((mm_path == 'g' || mm_path == 'G') && gemm_m > 1 && gemm_n_stride == gemm_n &&
@@ -485,9 +729,11 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 int64_t chunk = 0;
                 for (int64_t m_start = ith * row_align; m_start < gemm_m; m_start += row_align * nth, chunk++) {
                     const int64_t m_row_real = std::min(gemm_m - m_start, row_align);
+                    const int64_t spx_c1 = spx_mm ? ggml_time_us() : 0;
                     spacemit_kernels::rvv::memcpy1d(reinterpret_cast<uint8_t *>(tcm_buffer) + chunk * per_mb_rows_wsize,
-                                                    quant_a_buffer + m_start * row_stride_a,
+                                                    quant_a + m_start * row_stride_a,
                                                     m_row_real * row_stride_a);
+                    if (spx_mm) { spx_bc_us += ggml_time_us() - spx_c1; spx_bc_bytes += m_row_real * row_stride_a; }
                 }
             }
             (void) g_chunks;
@@ -517,8 +763,10 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
 
                 int64_t m_row_real = std::min(gemm_m - m_start, row_align);
 
-                spacemit_kernels::rvv::memcpy1d(tcm_buffer, quant_a_buffer + m_start * row_stride_a,
+                const int64_t spx_c2 = spx_mm ? ggml_time_us() : 0;
+                spacemit_kernels::rvv::memcpy1d(tcm_buffer, quant_a + m_start * row_stride_a,
                                                 m_row_real * row_stride_a);
+                if (spx_mm) { spx_bc_us += ggml_time_us() - spx_c2; spx_bc_bytes += m_row_real * row_stride_a; }
 
                 int64_t n_blk_real = 0;
                 for (int64_t ni = 0; ni < gemm_n; ni += n_blk_real, b_col += n_blk_real * row_stride_b) {
@@ -548,7 +796,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             // no longer overlaps its copy with the partner's compute.
             uint8_t * a_row = (uint8_t *) tcm_buffer;
             uint8_t * b_buf = (uint8_t *) tcm_buffer + gemm_workspace_size;
-            spacemit_kernels::rvv::memcpy1d(a_row, quant_a_buffer, gemm_workspace_size);
+            spacemit_kernels::rvv::memcpy1d(a_row, quant_a, gemm_workspace_size);
             uint8_t * b_zp = block_type_has_zp<BLOC_TYPE>() ? b_buf : nullptr;
 
             for (int64_t ni = static_cast<int64_t>(ith) * slab_cols; ni < gemm_n; ni += slab_cols * nth) {
@@ -568,7 +816,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 }
             }
         } else if (prefer_tcm && tcm_buffer != nullptr && slab_cols * row_stride_b <= tcm_buffer_size) {
-            uint8_t * a_row = quant_a_buffer;
+            uint8_t * a_row = quant_a;
             uint8_t * b_col = reinterpret_cast<uint8_t *>(tcm_buffer);
             if ((gemm_workspace_size + slab_cols * row_stride_b) <= tcm_buffer_size) {
                 a_row = (uint8_t *) tcm_buffer;
@@ -582,16 +830,16 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             if (ith % 2 == 0 && nb_real > 0) {
                 spacemit_kernels::rvv::memcpy1d(b_col, reinterpret_cast<uint8_t *>(w_data) + ni * row_stride_b,
                                                 nb_real * row_stride_b);
-                if (a_row != quant_a_buffer) {
-                    spacemit_kernels::rvv::memcpy1d(a_row, quant_a_buffer, gemm_workspace_size);
+                if (a_row != quant_a) {
+                    spacemit_kernels::rvv::memcpy1d(a_row, quant_a, gemm_workspace_size);
                 }
             }
 
             spine_barrier_wait(cur_barrier);
 
             if (ith % 2 != 0 && nb_real > 0) {
-                if (a_row != quant_a_buffer) {
-                    spacemit_kernels::rvv::memcpy1d(a_row, quant_a_buffer, gemm_workspace_size);
+                if (a_row != quant_a) {
+                    spacemit_kernels::rvv::memcpy1d(a_row, quant_a, gemm_workspace_size);
                 }
                 spacemit_kernels::rvv::memcpy1d(b_col, reinterpret_cast<uint8_t *>(w_data) + ni * row_stride_b,
                                                 nb_real * row_stride_b);
@@ -638,12 +886,15 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             for (int64_t n0 = static_cast<int64_t>(ith) * ws_slab; n0 < gemm_n; n0 += ws_slab * nth) {
                 const int64_t nb_real = std::min(gemm_n - n0, ws_slab);
 
+                const int64_t spx_c0 = spx_mm ? ggml_time_us() : 0;
                 spacemit_kernels::rvv::memcpy1d(b_tcm, reinterpret_cast<uint8_t *>(w_data) + n0 * row_stride_b,
                                                 nb_real * row_stride_b);
+                if (spx_mm) { spx_bc_us += ggml_time_us() - spx_c0; spx_bc_bytes += nb_real * row_stride_b; }
 
                 for (int64_t m0 = 0; m0 < gemm_m; ) {
                     const int64_t rows = std::min(gemm_m - m0, static_cast<int64_t>(row_align));
-                    auto rows_handled  = gemm_kernel(b_blk_len, quant_a_buffer + m0 * row_stride_a, b_tcm, b_zp,
+                    if (spx_mm) { spx_aread += rows * row_stride_a; }
+                    auto rows_handled  = gemm_kernel(b_blk_len, quant_a + m0 * row_stride_a, b_tcm, b_zp,
                                                      output + m0 * gemm_n + n0, rows, nb_real, b_k_blks, gemm_n);
                     m0 += rows_handled;
                 }
@@ -675,7 +926,7 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                 for (int64_t ni = 0; ni < n_count; ni += n_blk_real, b_col += n_blk_real * row_stride_b) {
                     n_blk_real = std::min(n_count - ni, n_blk);
 
-                    uint8_t * a_row = quant_a_buffer + m_start * row_stride_a;
+                    uint8_t * a_row = quant_a + m_start * row_stride_a;
 
                     float * c_blk = output + m_start * gemm_n + n_start + ni;
 
@@ -694,6 +945,35 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
                         rows_remaining -= rows_handled;
                     }
                 }
+            }
+        }
+        if (spx_mm) {
+            // re-derive which path the chain above actually took (the conditions only read
+            // variables that are not mutated by the chain, so this is exact)
+            char path_tag = 'X';
+            if (gemm_m == 1 && NB_COLS == 16 && ime1_int4 && vlen256 && (mm_path == 'd' || mm_path == 'D')) {
+                path_tag = 'D';
+            } else if ((mm_path == 'g' || mm_path == 'G') && gemm_m > 1 && gemm_n_stride == gemm_n &&
+                       tcm_buffer != nullptr &&
+                       spacemit_kernels::div_round_up(spacemit_kernels::div_round_up(gemm_m, row_align), nth) *
+                               per_mb_rows_wsize <=
+                           tcm_buffer_size) {
+                path_tag = 'G';
+            } else if (prefer_tcm && gemm_n_stride == gemm_n && tcm_buffer != nullptr &&
+                       per_mb_rows_wsize <= tcm_buffer_size) {
+                path_tag = 'P';
+            } else if ((mm_path == 'e' || mm_path == 'E') && gemm_m == 1 && tcm_buffer != nullptr &&
+                       (gemm_workspace_size + slab_cols * row_stride_b) <= tcm_buffer_size) {
+                path_tag = 'E';
+            } else if (prefer_tcm && tcm_buffer != nullptr && slab_cols * row_stride_b <= tcm_buffer_size) {
+                path_tag = 'B';
+            } else if ((mm_path == 'f' || mm_path == 'F') && gemm_m > 1 && ws_slab > 0 && tcm_buffer != nullptr) {
+                path_tag = 'F';
+            }
+            const int64_t spx_tg1 = ggml_time_us();
+            if (ith == 0) {
+                g_mmph.add(gemm_m, gemm_n, gemm_k, path_tag, spx_tq1 - spx_tq0, spx_tb1 - spx_tq1,
+                           spx_tg1 - spx_tb1, spx_bc_us, spx_bc_bytes, spx_aread);
             }
         }
     }
@@ -777,7 +1057,8 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS> class tensor_
             quantize_a_row_i8 = spacemit_kernels::ime1::quantize_a_row_i8;
 
             if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0> || std::is_same_v<BLOC_TYPE, block_q4_1> ||
-                          std::is_same_v<BLOC_TYPE, block_q4_K> || std::is_same_v<BLOC_TYPE, block_q4_0_k64>) {
+                          std::is_same_v<BLOC_TYPE, block_q4_K> || std::is_same_v<BLOC_TYPE, block_q4_0_k64> ||
+                          std::is_same_v<BLOC_TYPE, block_q4_0_k128>) {
                 gemm_kernel     = spacemit_kernels::ime1::gemm_kernel_i8i4;
                 set_kernel_impl = true;
             }
@@ -1102,12 +1383,24 @@ class tensor_traits_common : public tensor_traits_base {
                     const int64_t neq2    = op->src[0]->ne[2];  // number of query heads
                     const int64_t DK      = op->src[1]->ne[0];
                     const int64_t DV      = op->src[2]->ne[0];  // DV
+                    const int64_t neq1    = op->src[0]->ne[1];
+                    const int64_t nek1    = op->src[1]->ne[1];
 
                     // Tiled flash attention scratch (tile sizes defined in common.h)
                     // Per-thread: Q_q + KQ + mask + VKQ32 + V32 + K_f32 + padding
+                    // V32/K_f32 now hold every kv tile of the current head when the tiled path can
+                    // run (neq1 >= GGML_FA_TILE_KV, see spx_fa_tile_q in ops.cpp), so their row
+                    // extent is ceil(nek1/KV)*KV.  Must match the pointer arithmetic in
+                    // ggml_compute_forward_flash_attn_ext_tiled (ops.cpp).
+                    const int64_t kv_alloc = (neq1 >= GGML_FA_TILE_KV)
+                                           ? ((nek1 + GGML_FA_TILE_KV - 1) / GGML_FA_TILE_KV) * GGML_FA_TILE_KV
+                                           : (int64_t) GGML_FA_TILE_KV;
+                    const int64_t n_blocks = kv_alloc / GGML_FA_TILE_KV;
+                    // + FlashPrefill scratch: pooled keys [n_blocks][DK], per-block max/score, indices
                     size_t prefill = sizeof(float) *
                                      (GGML_FA_TILE_Q * DK + 2 * GGML_FA_TILE_Q * GGML_FA_TILE_KV + GGML_FA_TILE_Q * DV +
-                                      GGML_FA_TILE_KV * DV + GGML_FA_TILE_KV * DK) *
+                                      kv_alloc * DV + kv_alloc * DK + n_blocks * DK + 3 * n_blocks +
+                                      CACHE_LINE_SIZE_F32) *
                                      n_tasks;
 
                     // Decode path: n_kv_chunks = n_tasks (one chunk per thread)
@@ -1343,6 +1636,55 @@ class tensor_traits_common : public tensor_traits_base {
         const bool supported_types = (q->type == GGML_TYPE_F32 && k->type == GGML_TYPE_F16 && v->type == GGML_TYPE_F16);
         const bool supported_shape = (DK > 0 && DK <= 128 && DV > 0 && DV <= 128);
         const bool supported_vlen  = (__riscv_vlenb() == 128);
+        // TCM path: same tiled algorithm, but the hoisted K_f32/V32 (2*kv_alloc*DK floats) are
+        // staged in the per-core TCM instead of DDR. No numerics change (fp16/f32 RVV only).
+        // TCM is REQUIRED for this shape (set GGML_SPACEMIT_FA_TCM_FORCE=0 to allow a fallback);
+        // when the TCM exists but is too small for the whole hoisted K/V (long context), fall
+        // back to DDR staging instead of overrunning the buffer.
+        constexpr int64_t FA_KV_TILE = ggml_fa_tile_config::KV;
+        const int64_t fa_kv_alloc = ((nek1 + FA_KV_TILE - 1) / FA_KV_TILE) * FA_KV_TILE;
+        const int64_t     fa_tcm_bytes = 2 * fa_kv_alloc * DK * (int64_t) sizeof(float);
+        const bool fa_tcm_shape = supported_prec && supported_types && DK == 256 && DV == 256 &&
+                                  __riscv_vlenb() == 32 && !params->use_ref &&
+                                  dst->src[3] != nullptr && dst->src[4] == nullptr &&
+                                  neq1 >= ggml_fa_tile_config::Q && (int64_t) neq2 % nek2 == 0;
+        if (fa_tcm_shape) {
+            void * tcm = ggml::cpu::riscv64_spacemit::tls_context.tcm_buffer;
+            const size_t tcm_sz = ggml::cpu::riscv64_spacemit::tls_context.tcm_buffer_size;
+            if (tcm == nullptr) {
+                static std::atomic<int> warned{0};
+                const bool allow_fallback = getenv("GGML_SPACEMIT_FA_TCM_FORCE") != nullptr &&
+                                            atoi(getenv("GGML_SPACEMIT_FA_TCM_FORCE")) == 0;
+                if (warned.fetch_add(1) == 0) {
+                    fprintf(stderr, "[fa_tcm] TCM REQUIRED but unavailable (tcm_buffer=%p, size=%zu, need=%lld)\n",
+                            tcm, tcm_sz, (long long) fa_tcm_bytes);
+                }
+                if (!allow_fallback) {
+                    GGML_ABORT("[fa_tcm] flash attention requires TCM: make /dev/tcm readable "
+                               "(sudo chmod 666 /dev/tcm) or set GGML_SPACEMIT_FA_TCM_FORCE=0");
+                }
+            } else if ((int64_t) tcm_sz < fa_tcm_bytes) {
+                static std::atomic<int> warned{0};
+                if (warned.fetch_add(1) == 0) {
+                    fprintf(stderr, "[fa_tcm] hoisted K/V need %lld B > TCM %zu B; staging in DDR\n",
+                            (long long) fa_tcm_bytes, tcm_sz);
+                }
+            } else {
+                static std::atomic<int> logged{0};
+                if (logged.fetch_add(1) == 0) {
+                    fprintf(stderr, "[fa_tcm] flash attention staged in TCM: K_f32+V32 = %lld B from %zu B\n",
+                            (long long) fa_tcm_bytes, tcm_sz);
+                }
+                const int64_t nr = neq1 * neq2 * neq3;
+                const int64_t dr = (nr + params->nth - 1) / params->nth;
+                const int64_t ia = dr * params->ith;
+                const int64_t ib = MIN(ia + dr, nr);
+                if (ia < ib) {
+                    ggml_compute_forward_flash_attn_ext_tiled_tcm(params, dst, (int) ia, (int) ib, (float *) tcm);
+                }
+                return;
+            }
+        }
 
         if (!(supported_prec && supported_types && supported_shape && supported_vlen)) {
             ggml_compute_forward_flash_attn_ext(params, dst);
@@ -1410,6 +1752,7 @@ class tensor_traits_common : public tensor_traits_base {
 // Impl By IME1
 static const tensor_traits<block_q4_0, 32, 16>  q4_0_16x32_q8_0;
 static const tensor_traits<block_q4_0_k64, 64, 16> q4_0_k64_16x64_q8_0; // [Q4_0_K64] IME1, BlkLen=64
+static const tensor_traits<block_q4_0_k128, 128, 16> q4_0_k128_16x128_q8_0; // [Q4_0_K128] IME1, BlkLen=128
 static const tensor_traits<block_q4_1, 32, 16>  q4_1_16x32_q8_0;
 static const tensor_traits<block_q4_K, 32, 16>  q4_k_16x32_q8_0;
 // Impl By IME2
@@ -1478,6 +1821,16 @@ static const ggml::cpu::tensor_traits * ggml_riscv64_spacemit_get_optimal_repack
                 if (cur->ne[1] % 16 == 0 && cur->ne[0] % 64 == 0 &&
                     (ggml::cpu::riscv64_spacemit::global_spine_env_info.use_ime1)) {
                     return &ggml::cpu::riscv64_spacemit::q4_0_k64_16x64_q8_0;
+                }
+#endif
+            }
+            break;
+        case GGML_TYPE_Q4_0_K128:
+            {
+#if defined(RISCV64_SPACEMIT_IME1)
+                if (cur->ne[1] % 16 == 0 && cur->ne[0] % 128 == 0 &&
+                    (ggml::cpu::riscv64_spacemit::global_spine_env_info.use_ime1)) {
+                    return &ggml::cpu::riscv64_spacemit::q4_0_k128_16x128_q8_0;
                 }
 #endif
             }
@@ -1650,6 +2003,40 @@ static void ggml_backend_riscv64_spacemit_buffer_set_tensor(ggml_backend_buffer_
     if (tensor_traits) {
         auto OK = tensor_traits->repack(tensor, data, size);
         GGML_ASSERT(OK == 0);
+        // The weights are now repacked into the SpacemiT pool buffer; the source
+        // pages of the GGUF mapping are dead, yet they stay resident and duplicate
+        // the model in memory. Drop them. SPINE_KEEP_SRC=1 disables (A/B).
+        static const bool keep_src = getenv("SPINE_KEEP_SRC") != nullptr;
+        // only drop pages that belong to the GGUF file mapping: heap buffers
+        // (e.g. the CED projections) must not be released here
+        auto in_gguf_mapping = [](const void * p, size_t n) {
+            static std::vector<std::pair<uintptr_t, uintptr_t>> ranges;
+            if (ranges.empty()) {
+                ranges = [] {
+                std::vector<std::pair<uintptr_t, uintptr_t>> v;
+                FILE * f = fopen("/proc/self/maps", "r");
+                char line[512];
+                while (f && fgets(line, sizeof(line), f)) {
+                    unsigned long a = 0, b = 0; char perms[8] = {0}, path[400] = {0};
+                    if (sscanf(line, "%lx-%lx %7s %*s %*s %*s %399s", &a, &b, perms, path) >= 3 && strstr(path, ".gguf")) {
+                        v.push_back({ a, b });
+                    }
+                }
+                if (f) { fclose(f); }
+                return v;
+            }();
+            }
+            for (const auto & r : ranges) {
+                if ((uintptr_t) p >= r.first && (uintptr_t) p + n <= r.second) { return true; }
+            }
+            return false;
+        };
+        if (!keep_src && data != nullptr && in_gguf_mapping(data, size)) {
+            const uintptr_t pg = 4096;
+            const uintptr_t s0 = (uintptr_t) data & ~(pg - 1);
+            const uintptr_t e0 = ((uintptr_t) data + size + pg - 1) & ~(pg - 1);
+            madvise((void *) s0, (size_t)(e0 - s0), MADV_DONTNEED);
+        }
     }
 
     GGML_UNUSED(buffer);
@@ -1885,6 +2272,10 @@ static int bind_ai_thread() {
     return 0;
 }
 
+int ggml_backend_cpu_riscv64_spacemit_num_perfer_cores(void) {
+    return ggml::cpu::riscv64_spacemit::global_spine_env_info.num_perfer_cores;
+}
+
 void ggml_backend_cpu_riscv64_spacemit_set_numa_thread_affinity(int thread_n) {
     int cpu_id = sched_getcpu();
     if (ggml::cpu::riscv64_spacemit::global_spine_env_info.use_ime2 &&
@@ -1899,7 +2290,19 @@ void ggml_backend_cpu_riscv64_spacemit_set_numa_thread_affinity(int thread_n) {
         pthread_t    main_thread     = pthread_self();
         const auto & perfer_core_ids = ggml::cpu::riscv64_spacemit::global_spine_env_info.perfer_core_ids;
         if (thread_n < 0 || static_cast<size_t>(thread_n) >= perfer_core_ids.size()) {
-            GGML_ABORT("thread_n %d exceeds perfer_core_ids size %zu\n", thread_n, perfer_core_ids.size());
+            // This board exposes 8 cores but only 4 *preferred* ones, and the
+            // default worker count is the core count. Aborting here killed the
+            // process before a single token -- `llama-bench` with no -t died.
+            // Extra threads just run unpinned and without a TCM buffer; the
+            // preferred cores are still pinned, which is where the win is.
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                GGML_LOG_WARN("%s: thread_n %d >= perfer_core_ids size %zu; "
+                              "extra threads run unpinned (no TCM)\n",
+                              __func__, thread_n, perfer_core_ids.size());
+            }
+            return;
         }
         auto perfer_cpu_id = perfer_core_ids[static_cast<size_t>(thread_n)];
         CPU_SET(perfer_cpu_id, &(ggml::cpu::riscv64_spacemit::tls_context.cpuset));

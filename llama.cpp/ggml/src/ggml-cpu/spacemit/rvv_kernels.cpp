@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 #include <vector>
 
@@ -3476,6 +3479,49 @@ static void gdn_pack_state_q4_0(const float * s, int S_v, uint8_t * out) {
 }
 
 
+// F16 copy of the DeltaLog dense base: the base is read-only between merges, so it is stored at
+// half the bytes and the per-row dots widen it back. Repacked once per merge, not per token.
+static void gdn_pack_state_f16(const float * s, int S_v, uint8_t * out) {
+    ggml_fp16_t * o = (ggml_fp16_t *) out;
+    const int n = (int) S_v * (int) S_v;
+    int i = 0;
+    for (; i + 32 <= n; i += 32) {
+        const vfloat32m8_t v = __riscv_vle32_v_f32m8(s + i, 32);
+        __riscv_vse16_v_f16m4((_Float16 *) (o + i), __riscv_vfncvt_f_f_w_f16m4(v, 32), 32);
+    }
+    for (; i < n; ) {
+        const size_t vl = __riscv_vsetvl_e32m4(n - i);
+        const vfloat32m4_t v = __riscv_vle32_v_f32m4(s + i, vl);
+        __riscv_vse16_v_f16m2((_Float16 *) (o + i), __riscv_vfncvt_f_f_w_f16m2(v, vl), vl);
+        i += (int) vl;
+    }
+}
+
+// row (f16) . k and . q, widening the f16 row back to f32
+static inline void gdn_dot2_f16(int n, const ggml_fp16_t * row, const float * k, const float * q,
+                                float * sk, float * sq) {
+    const size_t vlmax = __riscv_vsetvlmax_e32m4();
+    vfloat32m4_t ak = __riscv_vfmv_v_f_f32m4(0.0f, vlmax);
+    vfloat32m4_t aq = __riscv_vfmv_v_f_f32m4(0.0f, vlmax);
+    int i = 0;
+    for (; i + (int) vlmax <= n; i += (int) vlmax) {
+        const vfloat32m4_t vr = __riscv_vfwcvt_f_f_v_f32m4(
+            __riscv_vle16_v_f16m2((const _Float16 *) (row + i), vlmax), vlmax);
+        ak = __riscv_vfmacc_vv_f32m4(ak, vr, __riscv_vle32_v_f32m4(k + i, vlmax), vlmax);
+        aq = __riscv_vfmacc_vv_f32m4(aq, vr, __riscv_vle32_v_f32m4(q + i, vlmax), vlmax);
+    }
+    if (i < n) {
+        const size_t vl = __riscv_vsetvl_e16m2(n - i);
+        const vfloat32m4_t vr = __riscv_vfwcvt_f_f_v_f32m4(
+            __riscv_vle16_v_f16m2((const _Float16 *) (row + i), vl), vl);
+        ak = __riscv_vfmacc_vv_f32m4(ak, vr, __riscv_vle32_v_f32m4(k + i, vl), vl);
+        aq = __riscv_vfmacc_vv_f32m4(aq, vr, __riscv_vle32_v_f32m4(q + i, vl), vl);
+    }
+    const vfloat32m1_t z = __riscv_vfmv_v_f_f32m1(0.0f, 1);
+    *sk = __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m4_f32m1(ak, z, vlmax));
+    *sq = __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m4_f32m1(aq, z, vlmax));
+}
+
 static int gdn_chunk_size(void) {
     static int c = -1;
     if (c == -1) {
@@ -3531,6 +3577,192 @@ static bool gdn_chunked_enabled(void) {
     }
     return e != 0;
 }
+// ----------------------------------------------------- DeltaLog prototype for GDN decode
+// ref: GDN递归状态延迟物化.md. Instead of materializing the whole S_v x S_v state every token, keep the
+// state tensor as a DENSE BASE that is only rewritten on a merge, and carry a compact log of pending
+// rank-1 updates with their decay snapshots:
+//   S_t = D(lbar) S_base + sum_l D(lbar - Lam_l) a_l b_l^T
+// Append (every token): read the base for the dots, replay the log, append (a=k, b=delta, Lam=lbar),
+// never write the state. Merge (every M-1 appends): materialize the base, clear the log.
+// Scope: scalar gate, n_tokens==1, K==1, F32 state, and the state in == state out aliasing that the
+// single-seq decode path guarantees. The log lives in `cache_slog_l*` (see llama-memory-recurrent.cpp)
+// so it is saved/restored with the cache.
+#define GDN_LOG_MAXL  8      // must match llama-memory-recurrent.cpp
+#define GDN_DL_MAXSV  1024
+
+// per (head) block inside one sequence row:
+//   [lbar, L, q8_valid, Lam[maxl], a[maxl][S_v], b[maxl][S_v], pad, q8 base bytes]
+// the Q8 region is a 64-byte aligned IME operand and the whole block is a multiple of 64 B
+static inline size_t gdn_q8_offset_floats(int64_t S_v) {
+    const size_t o = 3 + GDN_LOG_MAXL + 2 * (size_t) GDN_LOG_MAXL * S_v;
+    return (o + 15) & ~(size_t) 15;   // 16 floats = 64 B
+}
+static inline size_t gdn_q8_region_floats(int64_t S_v) {
+    const size_t b = ((size_t) S_v * (size_t) S_v * sizeof(ggml_fp16_t)) / sizeof(float);
+    return (b + 15) & ~(size_t) 15;
+}
+static inline size_t gdn_log_head_stride(int64_t S_v) {
+    return gdn_q8_offset_floats(S_v) + gdn_q8_region_floats(S_v);
+}
+
+// F16 copy of the dense base (packed at merge) as the readout's operand; on by default.
+// GGML_SPACEMIT_GDN_DL_F16=0 disables it.
+static bool gdn_deltalog_f16(void) {
+    static int e = -1;
+    if (e < 0) {
+        const char * s = getenv("GGML_SPACEMIT_GDN_DL_F16");
+        e = (s != NULL && s[0] == '0' && s[1] == '\0') ? 0 : 1;
+    }
+    return e != 0;
+}
+
+static int gdn_deltalog_M(void) {
+    static int e = -1;
+    if (e < 0) {
+        const char * s = getenv("GGML_SPACEMIT_GDN_DELTALOG");
+        if (s == NULL) {
+            e = 8;                                  // default on, decode merges every 8 tokens
+        } else {
+            e = atoi(s);
+            if (e < 2) {
+                e = 0;                              // 0 (or anything < 2) disables
+            } else if (e > GDN_LOG_MAXL) {
+                e = GDN_LOG_MAXL;
+            }
+        }
+    }
+    return e;
+}
+
+// materialize: S_base = exp(lbar)*S_base + sum_l exp(lbar-Lam_l) b_l (x) a_l, in ONE pass over S_base
+static void gdn_deltalog_merge(float * s_base, float * lg, int S_v) {
+    const int   vl    = __riscv_vsetvlmax_e32m8();
+    const int   L     = (int) lg[1];
+    if (L <= 0) {
+        return;
+    }
+    float *     Lam_h = lg + 3;
+    float *     a_h   = lg + 3 + GDN_LOG_MAXL;
+    float *     b_h   = a_h + (size_t) GDN_LOG_MAXL * S_v;
+    const float lbar  = lg[0];
+    const float el    = expf(lbar);
+
+    float fl[GDN_LOG_MAXL];
+    for (int l = 0; l < L; ++l) {
+        fl[l] = expf(lbar - Lam_h[l]);
+    }
+    for (int j = 0; j < S_v; ++j) {
+        float * row = s_base + (size_t) j * S_v;
+        for (int c = 0; c < S_v; c += vl) {
+            vfloat32m8_t acc = __riscv_vfmul_vf_f32m8(__riscv_vle32_v_f32m8(row + c, vl), el, vl);
+            for (int l = 0; l < L; ++l) {
+                const float w = fl[l] * b_h[(size_t) l * S_v + j];
+                acc = __riscv_vfmacc_vf_f32m8(acc, w, __riscv_vle32_v_f32m8(a_h + (size_t) l * S_v + c, vl), vl);
+            }
+            __riscv_vse32_v_f32m8(row + c, acc, vl);
+        }
+    }
+    lg[0] = 0.0f;
+    lg[1] = 0.0f;
+    if (gdn_deltalog_f16()) {
+        // refresh the Q8 copy of the freshly materialized base (once per merge, not per token)
+        gdn_pack_state_f16(s_base, S_v, (uint8_t *) (lg + gdn_q8_offset_floats(S_v)));
+        lg[2] = 1.0f;
+    }
+}
+
+// one (head, seq) row: Append, plus a Merge when the log is full. s_base is both read and (on merge)
+// written - the caller guarantees base_in == base_out. lg is this head's log block.
+static void gdn_deltalog_row(
+        float *       s_base,
+        const float * k_d,
+        const float * q_d,
+        const float * v_d,
+        float         beta_val,
+        float         g_val,
+        float         scale,
+        float *       attn_data,
+        int           S_v,
+        int           M,
+        float *       lg) {
+    const int   vl    = __riscv_vsetvlmax_e32m8();
+    float *     Lam_h = lg + 3;
+    float *     a_h   = lg + 3 + GDN_LOG_MAXL;
+    float *     b_h   = a_h + (size_t) GDN_LOG_MAXL * S_v;
+    float &     lbar  = lg[0];
+    int         L     = (int) lg[1];
+
+    float bk[GDN_DL_MAXSV], bq[GDN_DL_MAXSV], sumk[GDN_DL_MAXSV], sumq[GDN_DL_MAXSV];
+    float cak[GDN_LOG_MAXL], caq[GDN_LOG_MAXL];
+
+    lbar += g_val;
+    const float el = expf(lbar);
+
+    // shared scalars: a_l . k and a_l . q for each log entry (l only, off the row loop)
+    for (int l = 0; l < L; ++l) {
+        float sak, saq;
+        gdn_dot2_f32(S_v, a_h + (size_t) l * S_v, k_d, q_d, &sak, &saq);
+        const float f = expf(lbar - Lam_h[l]);
+        cak[l] = f * sak;
+        caq[l] = f * saq;
+    }
+
+    float C = 0.0f;
+    gdn_dot_f32(S_v, k_d, q_d, &C);
+
+    // base dots
+    if (gdn_deltalog_f16()) {
+        // the base is read-only between merges, so it is stored as F16 (half the bytes for the
+        // dominant base read) and repacked once per merge
+        uint8_t * bf16 = (uint8_t *) (lg + gdn_q8_offset_floats(S_v));
+        if (lg[2] == 0.0f) {
+            gdn_pack_state_f16(s_base, S_v, bf16);
+            lg[2] = 1.0f;
+        }
+        const ggml_fp16_t * bf = (const ggml_fp16_t *) bf16;
+        for (int j = 0; j < S_v; ++j) {
+            gdn_dot2_f16((int) S_v, bf + (size_t) j * S_v, k_d, q_d, &bk[j], &bq[j]);
+            sumk[j] = 0.0f;
+            sumq[j] = 0.0f;
+        }
+    } else {
+        for (int j = 0; j < S_v; ++j) {
+            gdn_dot2_f32((int) S_v, s_base + (size_t) j * S_v, k_d, q_d, &bk[j], &bq[j]);
+            sumk[j] = 0.0f;
+            sumq[j] = 0.0f;
+        }
+    }
+    // log replay, l OUTER so b_l[] is read contiguously
+    for (int l = 0; l < L; ++l) {
+        const float * bl = b_h + (size_t) l * S_v;
+        gdn_mad_f32(S_v, sumk, bl, cak[l]);
+        gdn_mad_f32(S_v, sumq, bl, caq[l]);
+    }
+
+    // output + append
+    for (int j = 0; j < S_v; ++j) {
+        const float sk = el * bk[j] + sumk[j];
+        const float sq = el * bq[j] + sumq[j];
+        const float d  = (v_d[j] - sk) * beta_val;
+        b_h[(size_t) L * S_v + j] = d;
+        attn_data[j] = (sq + d * C) * scale;
+    }
+    memcpy(a_h + (size_t) L * S_v, k_d, (size_t) S_v * sizeof(float));
+    Lam_h[L] = lbar;
+    L++;
+
+    // merge when the log is full (the merge reads L/lbar back from the block)
+    lg[1] = (float) L;
+    if (L >= M - 1) {
+        gdn_deltalog_merge(s_base, lg, S_v);
+        lbar = 0.0f;
+        L    = 0;
+    }
+
+    lg[0] = lbar;
+    lg[1] = (float) L;
+}
+
 static void forward_gated_delta_net_one_chunk(
         ggml_compute_params * params,
         ggml_tensor *         dst,
@@ -3589,6 +3821,8 @@ static void forward_gated_delta_net_one_chunk(
 
     const float scale  = 1.0f / sqrtf((float) S_v);
     const int   q4_mode = gdn_state_q4_mode();
+    const int   dl_M    = gdn_deltalog_M();
+    ggml_tensor * src_log = dst->src[7];   // DeltaLog buffer (may be null)
 
     // Q4-state scratch appended after the per-thread region: int8 k | int8 q | packed state groups
     uint8_t * q4_scratch = (uint8_t *) (scratch + 3 * S_v + (K > 1 ? S_v * S_v : 0));
@@ -3626,6 +3860,25 @@ static void forward_gated_delta_net_one_chunk(
                 : state_out_base + (iv3 * H + iv1) * S_v * S_v);
 
         const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
+
+        // DeltaLog: no per-token state write; the base stays put and only a merge rewrites it
+        if (dl_M >= 2 && src_log != nullptr && !kda && K == 1 && n_tokens == 1 &&
+            (const void *) s_out == (const void *) s_in && S_v <= GDN_DL_MAXSV) {
+            const float * q_d0 = (const float *) ((const char *) src_q->data + iq3 * src_q->nb[3] + iq1 * src_q->nb[1]);
+            const float * k_d0 = (const float *) ((const char *) src_k->data + ik3 * src_k->nb[3] + ik1 * src_k->nb[1]);
+            const float * v_d0 = (const float *) ((const char *) src_v->data + iv3 * src_v->nb[3] + iv1 * src_v->nb[1]);
+            const float   beta_val0 = *(const float *) ((const char *) src_beta->data + iv3 * src_beta->nb[3] + iv1 * src_beta->nb[1]);
+            const float * g_d0  = (const float *) ((const char *) src_g->data    + iv3 * src_g->nb[3]    + iv1 * src_g->nb[1]);
+
+            const size_t head_stride = gdn_log_head_stride(S_v);
+            float * lg = (float *) ((char *) src_log->data + iv3 * src_log->nb[1]) + iv1 * head_stride;
+
+            float * attn_data_dl = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
+            gdn_deltalog_row(s_out, k_d0, q_d0, v_d0, beta_val0, g_d0[0], scale, attn_data_dl,
+                             (int) S_v, dl_M, lg);
+            continue;
+        }
+
         memcpy(s_out, s_in, S_v * S_v * sizeof(float));
 
         float * attn_data = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;

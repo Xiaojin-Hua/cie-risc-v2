@@ -1,0 +1,14 @@
+{
+ "tag": "base_qa",
+ "model": "ssm_all_k128.gguf",
+ "spec": "none",
+ "prompts": "qa",
+ "max_tokens": 128,
+ "out_tps": 4.91,
+ "ttft_ms": 1005.2,
+ "tpot_ms": 197.3,
+ "acceptance": null,
+ "mean_len": null,
+ "degenerate": false,
+ "evalscope_rc": 0
+}

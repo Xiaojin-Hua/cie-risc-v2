@@ -1,7 +1,12 @@
 #include "ops.h"
 
+#if defined(__riscv_v_intrinsic)
+#include <riscv_vector.h>
+#endif
+
 #include "ggml-cpu.h"
 #include "ggml-impl.h"
+#include "ggml-quants.h"
 #include "binary-ops.h"
 #include "simd-gemm.h"
 #include "ggml.h"
@@ -10,6 +15,8 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 
 // ggml_compute_forward_dup
@@ -3920,6 +3927,39 @@ enum ggml_rms_norm_fuse_op {
     GGML_RMS_NORM_FUSE_OP_MUL,
 };
 
+#if defined(__riscv_v_intrinsic)
+// dst = rms_norm(src) * w, two passes: sum of squares, then scale and multiply.
+// Reading src twice beats the unfused pair, which writes norm(src) and reads it back.
+static inline void spx_rms_norm_mul_f32(int64_t n, float * dst, const float * src, const float * w, float eps) {
+    vfloat32m4_t acc = __riscv_vfmv_v_f_f32m4(0.0f, __riscv_vsetvlmax_e32m4());
+
+    for (int64_t i = 0; i < n; ) {
+        const size_t       vl = __riscv_vsetvl_e32m4(n - i);
+        const vfloat32m4_t v  = __riscv_vle32_v_f32m4(src + i, vl);
+        acc                   = __riscv_vfmacc_vv_f32m4(acc, v, v, vl);
+        i += (int64_t) vl;
+    }
+
+    const size_t vl1 = __riscv_vsetvlmax_e32m1();
+    vfloat32m1_t s   = __riscv_vfadd_vv_f32m1(__riscv_vget_v_f32m4_f32m1(acc, 0), __riscv_vget_v_f32m4_f32m1(acc, 1), vl1);
+    s                = __riscv_vfadd_vv_f32m1(s, __riscv_vget_v_f32m4_f32m1(acc, 2), vl1);
+    s                = __riscv_vfadd_vv_f32m1(s, __riscv_vget_v_f32m4_f32m1(acc, 3), vl1);
+    s                = __riscv_vfredusum_vs_f32m1_f32m1(s, __riscv_vfmv_v_f_f32m1(0.0f, vl1), vl1);
+
+    const float scale = 1.0f / sqrtf(__riscv_vfmv_f_s_f32m1_f32(s) / (float) n + eps);
+
+    for (int64_t i = 0; i < n; ) {
+        const size_t       vl = __riscv_vsetvl_e32m4(n - i);
+        vfloat32m4_t       v  = __riscv_vfmul_vf_f32m4(__riscv_vle32_v_f32m4(src + i, vl), scale, vl);
+        if (w) {
+            v = __riscv_vfmul_vv_f32m4(v, __riscv_vle32_v_f32m4(w + i, vl), vl);
+        }
+        __riscv_vse32_v_f32m4(dst + i, v, vl);
+        i += (int64_t) vl;
+    }
+}
+#endif
+
 template <ggml_rms_norm_fuse_op FUSE_OP>
 static void ggml_compute_forward_rms_norm_f32(
         const ggml_compute_params * params,
@@ -3954,18 +3994,6 @@ static void ggml_compute_forward_rms_norm_f32(
             for (int64_t i01 = ith; i01 < ne01; i01 += nth) {
                 const float * x = (float *) ((char *) src0->data + i01*nb01 + i02*nb02 + i03*nb03);
 
-                ggml_float sum = 0.0;
-                // worth switching to explicit SIMD?
-                for (int64_t i00 = 0; i00 < ne00; i00++) {
-                    sum += (ggml_float)(x[i00] * x[i00]);
-                }
-
-                const float mean  = sum/ne00;
-                const float scale = 1.0f/sqrtf(mean + eps);
-
-                // if you hit this, likely you got an inf somewhere earlier
-                assert(scale > 0.0f);
-
                 float * y = (float *) ((char *) dst->data + i01*nb1 + i02*nb2 + i03*nb3);
 
                 if constexpr (FUSE_OP == GGML_RMS_NORM_FUSE_OP_MUL) {
@@ -3974,10 +4002,38 @@ static void ggml_compute_forward_rms_norm_f32(
                     const int64_t i13 = i03 % ne13;
                     const float * w = (float *) ((char *) src1->data + i11*nb11 + i12*nb12 + i13*nb13);
 
+#if defined(__riscv_v_intrinsic)
+                    if (ne11 == 1 && ne12 == 1 && ne13 == 1) {
+                        spx_rms_norm_mul_f32(ne00, y, x, w, eps);
+                        continue;
+                    }
+#endif
+                    ggml_float sum = 0.0;
+                    for (int64_t i00 = 0; i00 < ne00; i00++) {
+                        sum += (ggml_float)(x[i00] * x[i00]);
+                    }
+
+                    const float mean  = sum/ne00;
+                    const float scale = 1.0f/sqrtf(mean + eps);
+
+                    // if you hit this, likely you got an inf somewhere earlier
+                    assert(scale > 0.0f);
+
                     for (int64_t i00 = 0; i00 < ne00; i00++) {
                         y[i00] = x[i00] * scale * w[i00];
                     }
                 } else {
+                    ggml_float sum = 0.0;
+                    for (int64_t i00 = 0; i00 < ne00; i00++) {
+                        sum += (ggml_float)(x[i00] * x[i00]);
+                    }
+
+                    const float mean  = sum/ne00;
+                    const float scale = 1.0f/sqrtf(mean + eps);
+
+                    // if you hit this, likely you got an inf somewhere earlier
+                    assert(scale > 0.0f);
+
                     memcpy(y, x, ne00 * sizeof(float));
                     ggml_vec_scale_f32(ne00, y, scale);
                 }
@@ -8669,6 +8725,21 @@ void ggml_compute_forward_top_k(
     }
 }
 
+#if defined(__riscv_v_intrinsic)
+// SPX: the one-chunk (decode) kernel used to convert the additive mask one key at a time:
+// slope*fp16->f32.  Stage it in blocks with one widening load, one vfmul and one store.
+// fp16->fp32 widening is exact and the multiply is the same single IEEE operation, so the
+// staged values are bit-identical to the scalar expression.
+static bool spx_fa_mask_onechunk_rvv_enabled(void) {
+    static int e = -1;
+    if (e == -1) {
+        const char * s = getenv("GGML_SPACEMIT_FA_MASK_ONECHUNK_RVV");
+        e = (s != NULL && s[0] == '0') ? 0 : 1;   // default ON
+    }
+    return e != 0;
+}
+#endif
+
 static void ggml_compute_forward_flash_attn_ext_f16_one_chunk(
         const ggml_compute_params * params,
         ggml_tensor * dst,
@@ -8793,8 +8864,34 @@ static void ggml_compute_forward_flash_attn_ext_f16_one_chunk(
         // loop over n_kv and n_head_kv
         // ref: https://arxiv.org/pdf/2112.05682.pdf
 
-        for (int64_t ic = ic_start; ic < ic_end; ++ic) {
-            const float mv = mp ? slope*GGML_CPU_FP16_TO_FP32(mp[ic]) : 0.0f;
+#if defined(__riscv_v_intrinsic)
+        const bool mask_blk_rvv = mask != nullptr && spx_fa_mask_onechunk_rvv_enabled();
+        const int  mask_blk     = MIN((int) __riscv_vsetvlmax_e16m2(), 64);
+#else
+        const bool mask_blk_rvv = false;
+        const int  mask_blk     = 32;
+#endif
+        alignas(16) float mv_buf[64];
+
+        for (int64_t ic = ic_start; ic < ic_end; ) {
+            const int nblk = (int) MIN((int64_t) mask_blk, ic_end - ic);
+            bool blk_all_inf = false;
+            if (mask_blk_rvv) {
+#if defined(__riscv_v_intrinsic)
+                const size_t vl = __riscv_vsetvl_e16m2(nblk);
+                const vfloat16m2_t h = __riscv_vle16_v_f16m2((const _Float16 *) (mp + ic), vl);
+                const vfloat32m4_t f = __riscv_vfmul_vf_f32m4(__riscv_vfwcvt_f_f_v_f32m4(h, vl), slope, vl);
+                __riscv_vse32_v_f32m4(mv_buf, f, vl);
+                blk_all_inf = __riscv_vcpop_m_b8(__riscv_vmfne_vf_f32m4_b8(f, -INFINITY, vl), vl) == 0;
+#endif
+            }
+            if (blk_all_inf) {
+                ic += nblk;
+                continue;
+            }
+            for (int b = 0; b < nblk; ++b, ++ic) {
+            const float mv = mask_blk_rvv ? mv_buf[b]
+                                          : (mp ? slope*GGML_CPU_FP16_TO_FP32(mp[ic]) : 0.0f);
             if (mv == -INFINITY) {
                 continue;
             }
@@ -8858,6 +8955,7 @@ static void ggml_compute_forward_flash_attn_ext_f16_one_chunk(
             }
 
             S = S*ms + vs; // scale and increment sum with partial sum
+            }
         }
 
         if (v->type == GGML_TYPE_F16) {
@@ -8907,10 +9005,422 @@ static void ggml_compute_forward_flash_attn_ext_f16_one_chunk(
     }
 }
 
+
+// --- KV dequantisation for quantized KV caches on the tiled FA path ----------
+// Reads one KV row of `n` elements of `type` from `src` and writes it to
+// dst[i * dst_stride].  dst_stride == 1 -> row-major, dst_stride == KV_TILE_SZ
+// -> the transposed K layout used by the tiled path.
+static inline void ggml_fa_dequant_row(float * dst, int64_t dst_stride, const char * src,
+                                       int64_t n, ggml_type type) {
+    if (type == GGML_TYPE_Q8_0) {
+        const block_q8_0 * b = (const block_q8_0 *) src;
+        for (int64_t d = 0; d < n; d += QK8_0) {
+            const float s = GGML_CPU_FP16_TO_FP32(b->d);
+            for (int j = 0; j < QK8_0; ++j) {
+                dst[(d + j) * dst_stride] = s * (float) b->qs[j];
+            }
+            ++b;
+        }
+    } else if (type == GGML_TYPE_Q4_0) {
+        const block_q4_0 * b = (const block_q4_0 *) src;
+        for (int64_t d = 0; d < n; d += QK4_0) {
+            const float s = GGML_CPU_FP16_TO_FP32(b->d);
+            for (int j = 0; j < QK4_0 / 2; ++j) {
+                dst[(d + j) * dst_stride]              = s * (float) ((int) (b->qs[j] & 0x0F) - 8);
+                dst[(d + j + QK4_0 / 2) * dst_stride]  = s * (float) ((int) (b->qs[j] >>   4) - 8);
+            }
+            ++b;
+        }
+    } else {
+        GGML_ABORT("fattn: unsupported quantized KV type");
+    }
+}
+
+static bool ggml_fa_kv_supported_tiled(ggml_type t) {
+    // F16/F32 are the native tile layouts.  Q8_0/Q4_0 are dequantised row by row into the K/V
+    // tiles (ggml_fa_dequant_row) and into the FlashPrefill probe (spx_fp_pool_key), so they are
+    // bit-for-bit as usable as the f16 path — the probe used to read quantised K as f16, which
+    // silently dropped the wrong key blocks (PPL 25.8 -> 104.7).  GGML_SPACEMIT_FA_TILED_Q=0
+    // still forces the generic chunked kernel for quantized KV, for A/B.
+    if (t == GGML_TYPE_F16 || t == GGML_TYPE_F32) {
+        return true;
+    }
+    static const bool allow_quant = []() {
+        const char * s = getenv("GGML_SPACEMIT_FA_TILED_Q");
+        return !(s != NULL && s[0] == '0');
+    }();
+    return allow_quant && (t == GGML_TYPE_Q8_0 || t == GGML_TYPE_Q4_0);
+}
+
+#if defined(__riscv_v_intrinsic)
+// RVV mask dequant for the tiled flash-attention: fp16 -> fp32 + slope scale + the
+// "all entries are -inf" skip test, in one pass.  See patch_fa_mask_land.py.
+static bool spx_fa_mask_rvv_enabled(void) {
+    static int e = -1;
+    if (e == -1) {
+        const char * s = getenv("GGML_SPACEMIT_FA_MASK_RVV");
+        e = (s != NULL && s[0] == '0') ? 0 : 1;   // default ON
+    }
+    return e != 0;
+}
+#endif
+
+// ---- SPX FA mask phase: f16 staging + fused scale/add, and next-tile prefetch ----
+// The mask is read 128 B at a time from `tile_rows` rows spaced mask->nb[1] apart (20 KB at
+// n=10240) -> ~5 MB of footprint per (q_tile,kv_tile); and the f32 mask32 round-trip costs
+// 64 KB write + 64 KB read per attempt.  Staging the raw f16 and fusing slope+add removes half
+// of that traffic.  Bit-exact: the old path computed slope*fp16(x) then KQ + that; the fused
+// loop performs the same two operations in the same order.
+static bool spx_fa_mask_f16(void) {
+    static int e = -1;
+    if (e == -1) { const char * s = getenv("GGML_SPACEMIT_FA_MASK_F16"); e = (s != NULL && s[0] == '0') ? 0 : 1; }
+    return e != 0;                       // default ON
+}
+static bool spx_fa_mask_pfn(void) {
+    static int e = -1;
+    if (e == -1) { const char * s = getenv("GGML_SPACEMIT_FA_MASK_PFN"); e = (s != NULL && s[0] == '0') ? 0 : 1; }
+    return e != 0;                       // default ON
+}
+// SPX: the transposed K pack has an RVV widening+strided-store arm.  It used to be followed by
+// the scalar arm unconditionally, so every K element was packed twice (the scalar one also does
+// a 256 B strided store).  The arms write identical values.
+// GGML_SPACEMIT_FA_KPACK_RVV: 1 = RVV only (default), 0 = scalar only, 2 = both (legacy A/B).
+static int spx_fa_kpack_mode(void) {
+    static int e = -1;
+    if (e == -1) {
+        const char * s = getenv("GGML_SPACEMIT_FA_KPACK_RVV");
+        e = (s != NULL) ? atoi(s) : 1;
+        if (e != 0 && e != 1 && e != 2) e = 1;
+    }
+    return e;
+}
+
+// ---- FlashPrefill-style block-sparse prefill -----------------------------------------------
+// See K1_Qwen3.5_llama.cpp_Optimization_Plan_v2.md:
+//   1) probe a few uniformly spaced queries of each Q tile (Instantaneous Pattern Discovery),
+//   2) score every causal key block against the block-averaged key with a fused 2D reduction,
+//   3) keep the blocks whose normalized score is >= alpha * max score (dynamic threshold),
+//   4) execute the precise tiled attention only on the selected key blocks.
+// The diagonal blocks (and `local_blocks` blocks before them) are always kept, and the whole
+// feature only activates for long, plain-causal attention (see spx_fa_fp_config + fp_active).
+struct spx_fa_fp_cfg {
+    bool    enabled;
+    float   alpha;
+    int     probes;
+    int64_t min_keys;
+    int     local_blocks;
+    int     keep_head;   // always keep the first key blocks (vertical attention anchors)
+    int     min_blocks;
+};
+
+static const spx_fa_fp_cfg & spx_fa_fp_config(void) {
+    static const spx_fa_fp_cfg c = []() {
+        spx_fa_fp_cfg r;
+        r.enabled      = true;
+        r.alpha        = 0.05f;
+        r.probes       = 8;
+        r.min_keys     = 1024;
+        r.local_blocks = 1;
+        r.keep_head    = 0;
+        r.min_blocks   = 8;
+        if (const char * s = getenv("GGML_SPACEMIT_FA_FLASHPREFILL")) r.enabled      = (s[0] != '0');
+        if (const char * s = getenv("GGML_SPACEMIT_FA_FP_ALPHA"))      r.alpha        = (float) atof(s);
+        if (const char * s = getenv("GGML_SPACEMIT_FA_FP_PROBES"))     r.probes       = atoi(s);
+        if (const char * s = getenv("GGML_SPACEMIT_FA_FP_MIN_KEYS"))   r.min_keys     = atoll(s);
+        if (const char * s = getenv("GGML_SPACEMIT_FA_FP_LOCAL"))      r.local_blocks = atoi(s);
+        if (const char * s = getenv("GGML_SPACEMIT_FA_FP_KEEP_HEAD"))  r.keep_head    = atoi(s);
+        if (const char * s = getenv("GGML_SPACEMIT_FA_FP_MIN_BLOCKS")) r.min_blocks   = atoi(s);
+        if (r.probes       < 1) r.probes       = 1;
+        if (r.probes       > 64) r.probes      = 64;
+        if (r.alpha        < 0.0f) r.alpha     = 0.0f;
+        if (r.local_blocks < 0) r.local_blocks = 0;
+        if (r.keep_head    < 0) r.keep_head    = 0;
+        if (r.min_blocks   < 1) r.min_blocks   = 1;
+        return r;
+    }();
+    return c;
+}
+
+#if defined(__riscv_v_intrinsic)
+static inline float spx_fp_dot_f32(const float * a, const float * b, int64_t n) {
+    const size_t vlmax = __riscv_vsetvlmax_e32m4();
+    vfloat32m4_t acc = __riscv_vfmv_v_f_f32m4(0.0f, vlmax);
+    int64_t i = 0;
+    for (; i + (int64_t) vlmax <= n; i += (int64_t) vlmax) {
+        const vfloat32m4_t va = __riscv_vle32_v_f32m4(a + i, vlmax);
+        const vfloat32m4_t vb = __riscv_vle32_v_f32m4(b + i, vlmax);
+        acc = __riscv_vfmacc_vv_f32m4(acc, va, vb, vlmax);
+    }
+    if (i < n) {
+        const size_t vl = __riscv_vsetvl_e32m4(n - i);
+        const vfloat32m4_t va = __riscv_vle32_v_f32m4(a + i, vl);
+        const vfloat32m4_t vb = __riscv_vle32_v_f32m4(b + i, vl);
+        acc = __riscv_vfmacc_vv_f32m4(acc, va, vb, vl);
+    }
+    const vfloat32m1_t s = __riscv_vfredusum_vs_f32m4_f32m1(acc, __riscv_vfmv_s_f_f32m1(0.0f, 1), vlmax);
+    return __riscv_vfmv_f_s_f32m1_f32(s);
+}
+#else
+static inline float spx_fp_dot_f32(const float * a, const float * b, int64_t n) {
+    float s = 0.0f;
+    for (int64_t i = 0; i < n; ++i) s += a[i] * b[i];
+    return s;
+}
+#endif
+
+// Upper bound on the head size the probe can pool when K is not f16: the dequantised key row
+// (see spx_fp_pool_key) is a stack buffer.  DK is 256 for Qwen3.5-2B and 320 for 4B.
+static constexpr int64_t SPX_FA_FP_MAX_DK = 512;
+
+// dst[0..DK) = mean of the `nkeys` key rows starting at key `ic0`.
+// The RVV path below reinterprets a key row as f16 (the -fa layout of an f16 KV cache), so a
+// quantised or f32 K must be converted row by row instead; `krow` is a DK-float scratch for that.
+// Without this the probe fed garbage block-averaged keys to the selection and the precise tiled
+// pass then ran on the wrong blocks (q4_0/q4_0 KV: PPL 25.8 -> 104.7).
+static void spx_fp_pool_key(float * dst, const char * kbase, size_t nbk1,
+                            int64_t ic0, int nkeys, int64_t DK, ggml_type ktype, float * krow) {
+    const float inv = 1.0f / (float) nkeys;
+    if (ktype != GGML_TYPE_F16) {
+        const ggml_to_float_t to_float = ktype == GGML_TYPE_F32
+                                       ? nullptr
+                                       : ggml_get_type_traits(ktype)->to_float;
+        for (int64_t d = 0; d < DK; ++d) {
+            dst[d] = 0.0f;
+        }
+        for (int tk = 0; tk < nkeys; ++tk) {
+            const char * row = kbase + (ic0 + tk) * nbk1;
+            if (to_float != nullptr) {
+                to_float(row, krow, DK);
+            }
+            const float * src = to_float != nullptr ? krow : (const float *) row;
+            for (int64_t d = 0; d < DK; ++d) {
+                dst[d] += src[d];
+            }
+        }
+        for (int64_t d = 0; d < DK; ++d) {
+            dst[d] *= inv;
+        }
+        return;
+    }
+#if defined(__riscv_v_intrinsic)
+    for (int64_t d0 = 0; d0 < DK; ) {
+        // e32m4 and e16m2 have the same VLMAX for any VLEN, so one vl drives both loads
+        const size_t vl = __riscv_vsetvl_e32m4(DK - d0);
+        vfloat32m4_t acc = __riscv_vfmv_v_f_f32m4(0.0f, vl);
+        for (int tk = 0; tk < nkeys; ++tk) {
+            const _Float16 * row = (const _Float16 *) (kbase + (ic0 + tk) * nbk1) + d0;
+            const vfloat16m2_t h = __riscv_vle16_v_f16m2(row, vl);
+            acc = __riscv_vfadd_vv_f32m4(acc, __riscv_vfwcvt_f_f_v_f32m4(h, vl), vl);
+        }
+        __riscv_vse32_v_f32m4(dst + d0, __riscv_vfmul_vf_f32m4(acc, inv, vl), vl);
+        d0 += (int64_t) vl;
+    }
+#else
+    for (int64_t d = 0; d < DK; ++d) {
+        float s = 0.0f;
+        for (int tk = 0; tk < nkeys; ++tk) {
+            const ggml_fp16_t * row = (const ggml_fp16_t *) (kbase + (ic0 + tk) * nbk1);
+            s += GGML_CPU_FP16_TO_FP32(row[d]);
+        }
+        dst[d] = s * inv;
+    }
+#endif
+}
+
+// Last key with a finite mask value in `row`.  Causal masks are a finite prefix (-inf afterwards),
+// so scanning back block by block only reads the entries that are actually -inf.
+static int64_t spx_fa_mask_last_finite(const ggml_fp16_t * row, int64_t n) {
+    int64_t b_end = n;
+    while (b_end > 0) {
+        const int64_t b0 = MAX((int64_t) 0, b_end - GGML_FA_TILE_KV);
+        bool any = false;
+        int64_t t = b0;
+#if defined(__riscv_v_intrinsic)
+        for (; t < b_end; ) {
+            const size_t vl = __riscv_vsetvl_e16m2(b_end - t);
+            const vfloat16m2_t h = __riscv_vle16_v_f16m2((const _Float16 *) (row + t), vl);
+            const vfloat32m4_t f = __riscv_vfwcvt_f_f_v_f32m4(h, vl);
+            if (__riscv_vcpop_m_b8(__riscv_vmfne_vf_f32m4_b8(f, -INFINITY, vl), vl) != 0) {
+                any = true;
+                break;
+            }
+            t += (int64_t) vl;
+        }
+#else
+        for (; t < b_end; ++t) {
+            if (GGML_CPU_FP16_TO_FP32(row[t]) != -INFINITY) { any = true; break; }
+        }
+#endif
+        if (any) {
+            for (int64_t k = b_end - 1; k >= b0; --k) {
+                if (GGML_CPU_FP16_TO_FP32(row[k]) != -INFINITY) return k;
+            }
+        }
+        b_end = b0;
+    }
+    return -1;
+}
+
+// Select the key blocks for one Q tile.  Writes ascending block indices to `sel_idx` and returns
+// their count.  `jmax` is the last causally reachable block (derived from the mask).  The
+// `Kmean`/`fm`/`fs` scratch is per thread; (`cache_*`) memoises the block-averaged keys across the
+// Q tiles of the same (head, seq).
+static int spx_fa_fp_select(
+        const float * Q_f32, int DK, int tile_rows, int64_t pos_first, int64_t jmax,
+        const char * kbase, size_t nbk1, int64_t nek1, int64_t n_blocks, ggml_type ktype,
+        float scale,
+        float * Kmean, float * fm, float * fs, int32_t * sel_idx,
+        int64_t & cache_iq2, int64_t & cache_iq3, int64_t & cache_blocks,
+        int64_t cur_iq2, int64_t cur_iq3) {
+    const auto & cfg = spx_fa_fp_config();
+    jmax = MIN(jmax, n_blocks - 1);
+
+    // Not enough candidate blocks to be worth the probe: keep everything causally reachable.
+    if (jmax + 1 < cfg.min_blocks) {
+        for (int64_t j = 0; j <= jmax; ++j) sel_idx[j] = (int32_t) j;
+        return (int) (jmax + 1);
+    }
+
+    // dequantised key row, only used when K is not f16
+    float krow[SPX_FA_FP_MAX_DK];
+
+    if (cache_iq2 != cur_iq2 || cache_iq3 != cur_iq3) {
+        cache_iq2 = cur_iq2;
+        cache_iq3 = cur_iq3;
+        cache_blocks = 0;
+    }
+
+    // block-averaged keys, once per (head, seq, block)
+    for (int64_t j = cache_blocks; j <= jmax; ++j) {
+        const int64_t ic0  = j * GGML_FA_TILE_KV;
+        const int     nkey = (int) MIN((int64_t) GGML_FA_TILE_KV, nek1 - ic0);
+        spx_fp_pool_key(Kmean + j * DK, kbase, nbk1, ic0, nkey, DK, ktype, krow);
+    }
+    if (jmax + 1 > cache_blocks) cache_blocks = jmax + 1;
+
+    // fused 2D reduction: one max + one exp-sum per (Q tile, key block), probes sampled uniformly
+    const int P = MIN(cfg.probes, tile_rows);
+    float xp[64];
+    float M_I = -INFINITY;
+    for (int64_t j = 0; j <= jmax; ++j) {
+        const float * kb = Kmean + j * DK;
+        float m = -INFINITY;
+        for (int p = 0; p < P; ++p) {
+            const int idx = (int) (((int64_t) p * tile_rows) / P);
+            const float x = spx_fp_dot_f32(Q_f32 + (int64_t) idx * DK, kb, DK) * scale;
+            xp[p] = x;
+            if (x > m) m = x;
+        }
+        float S = 0.0f;
+        for (int p = 0; p < P; ++p) S += expf(xp[p] - m);
+        fm[j] = m;
+        fs[j] = S;
+        if (m > M_I) M_I = m;
+    }
+
+    float maxS = 0.0f;
+    for (int64_t j = 0; j <= jmax; ++j) {
+        const float s = fs[j] * expf(fm[j] - M_I);
+        fs[j] = s;
+        if (s > maxS) maxS = s;
+    }
+
+    // dynamic threshold tau = alpha * max score; Score_J >= tau  <=>  S'_J >= alpha * max S'
+    // The local window is anchored at the ABSOLUTE query position (from the mask), so a cached
+    // context's diagonal does not degenerate into "keep everything".
+    const float   tau     = cfg.alpha * maxS;
+    const int64_t j_local = MAX((int64_t) 0, pos_first / GGML_FA_TILE_KV - cfg.local_blocks);
+    int n_sel = 0;
+    for (int64_t j = 0; j <= jmax; ++j) {
+        if (fs[j] >= tau || j >= j_local || j < cfg.keep_head) {
+            sel_idx[n_sel++] = (int32_t) j;
+        }
+    }
+
+    static const bool fp_score_dbg = getenv("GGML_SPACEMIT_FA_FP_DEBUG") != nullptr;
+    if (fp_score_dbg) {
+        static int dbg_n = 0;
+        if (dbg_n++ < 12) {
+            fprintf(stderr, "[FPscore] pos=%d P=%d jmax=%d M_I=%.3f maxS=%.3f tau=%.4f nsel=%d scores:",
+                    (int) pos_first, P, (int) jmax, M_I, maxS, tau / (maxS > 0.0f ? maxS : 1.0f), n_sel);
+            for (int64_t j = 0; j <= MIN((int64_t) 16, jmax); ++j) {
+                fprintf(stderr, " %.4f", fs[j] / (maxS > 0.0f ? maxS : 1.0f));
+            }
+            fprintf(stderr, "\n");
+        }
+    }
+    return n_sel;
+}
+
+// The causally reachable key-block limit is derived from the mask (see the tiled kernel) and lets
+// the kernel skip both the precise work and the mask staging of the all -inf tail.  It is exact
+// for causal masks; GGML_SPACEMIT_FA_CAUSAL_RANGE=0 restores the full-range scan for A/B.
+static bool spx_fa_causal_range_enabled(void) {
+    static int e = -1;
+    if (e == -1) { const char * s = getenv("GGML_SPACEMIT_FA_CAUSAL_RANGE"); e = (s != NULL && s[0] == '0') ? 0 : 1; }
+    return e != 0;                       // default ON
+}
+
+#if defined(__riscv_v_intrinsic)
+static void spx_fa_mask_add_f16(int64_t n, float * GGML_RESTRICT dst,
+                                const ggml_fp16_t * GGML_RESTRICT src, float slope) {
+    int64_t t = 0;
+    for (; t < n; ) {
+        const size_t vl = __riscv_vsetvl_e16m2(n - t);
+        const vfloat16m2_t h = __riscv_vle16_v_f16m2((const _Float16 *) (src + t), vl);
+        const vfloat32m4_t f = __riscv_vfmul_vf_f32m4(__riscv_vfwcvt_f_f_v_f32m4(h, vl), slope, vl);
+        const vfloat32m4_t d = __riscv_vle32_v_f32m4(dst + t, vl);
+        __riscv_vse32_v_f32m4(dst + t, __riscv_vfadd_vv_f32m4(d, f, vl), vl);
+        t += (int64_t) vl;
+    }
+}
+#endif
+
+
+// SPX: hoist the K/V packing out of the (q_tile,kv_tile) pair loop (see patch_fa_kvhoist.py).
+// Before: every pair re-ran the K dequant+transpose and the V dequant, so each K/V row was packed
+// ~n/(2*QT) times (8 at n=4096).  After: the kernels for the current (q-head, seq) are packed at
+// most once per thread.  GGML_SPACEMIT_FA_KVHOIST=0 restores the old behaviour.
+static bool spx_fa_kvhoist_enabled(void) {
+    static int e = -1;
+    if (e == -1) {
+        const char * s = getenv("GGML_SPACEMIT_FA_KVHOIST");
+        e = (s != NULL && s[0] == '0') ? 0 : 1;   // default ON
+    }
+    return e != 0;
+}
+
+// SPX: the flash-attention Q tile is chosen at run time.
+// A large tile (128) amortises the per-(q_tile,kv_tile) K/V packing and mask dequantisation and
+// gives the Q*K^T gemm a bigger M, but it also destroys causal tile skipping for short
+// sequences: with n_tokens == 128 the whole sequence becomes ONE q tile, so both kv tiles have to
+// be processed instead of one (skipped).  Measured on K1: pp512 FA node -5.90% (4/4 paired),
+// pp128 e2e -1.16%.  Hence long -> 128, short -> 64.
+// GGML_SPACEMIT_FA_TILE_Q=<n> forces a fixed tile; unset or 0 means auto.
+static int spx_fa_tile_q(int64_t n_tokens) {
+    static int forced = -2;
+    if (forced == -2) {
+        const char * s = getenv("GGML_SPACEMIT_FA_TILE_Q");
+        forced = (s != NULL && s[0] != '\0') ? atoi(s) : -1;
+    }
+    if (forced > 0) {
+        return forced;
+    }
+    // 256 needs n_tokens >= 256 or the tiled path is not taken at all (neq1 >= Q);
+    // <=128 keeps the causal kv-tile skipping effective.
+    if (n_tokens >= 256) {
+        return 256;
+    }
+    if (n_tokens > 128) {
+        return 128;
+    }
+    return 64;
+}
+
 static void ggml_compute_forward_flash_attn_ext_tiled(
         const ggml_compute_params * params,
         ggml_tensor * dst,
-        int ir0, int ir1) {
+        int ir0, int ir1, float * tcm_kv) {
     const ggml_tensor * q     = dst->src[0];
     const ggml_tensor * k     = dst->src[1];
     const ggml_tensor * v     = dst->src[2];
@@ -8981,8 +9491,26 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
 
     int ith = params->ith;
 
-    static constexpr int Q_TILE_SZ  = ggml_fa_tile_config::Q;
+    static constexpr int Q_TILE_SZ  = ggml_fa_tile_config::Q;   // layout / stack max (256)
     static constexpr int KV_TILE_SZ = ggml_fa_tile_config::KV;
+    const int QT = spx_fa_tile_q(neq1);                         // runtime tile extent (64/128/256)
+
+    // With the hoist the K/V buffers hold EVERY kv tile of the current (q-head, seq), so the row
+    // extent is kv_alloc (a multiple of KV_TILE_SZ) instead of KV_TILE_SZ.  Both arms use the same
+    // allocation so a single scratch formula in ime.cpp serves both.
+    const bool    kv_hoist = spx_fa_kvhoist_enabled();
+    const int64_t kv_alloc = ((nek1 + KV_TILE_SZ - 1)/KV_TILE_SZ) * KV_TILE_SZ;
+    const int64_t n_blocks  = kv_alloc / KV_TILE_SZ;
+
+    // (q-head, seq) the cached K/V currently belongs to, and how many leading kv columns are packed.
+    int64_t cached_iq2 = -1;
+    int64_t cached_iq3 = -1;
+    int64_t kv_packed  = 0;
+
+    // FlashPrefill pooled-key cache, keyed like the K/V pack cache but stored per thread.
+    int64_t fp_ciq2  = -1;
+    int64_t fp_ciq3  = -1;
+    int64_t fp_cblks = 0;
 
     int ir = ir0;
     while (ir < ir1) {
@@ -8995,7 +9523,7 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
         // - limited by tile size (Q_TILE_SZ)
         // - limited by chunk boundary (ir1 - ir)
         // - limited by head boundary (neq1 - iq1) to avoid crossing into next head
-        const int tile_rows = MIN(Q_TILE_SZ, MIN((int)(ir1 - ir), (int)(neq1 - iq1)));
+        const int tile_rows = MIN(QT, MIN((int)(ir1 - ir), (int)(neq1 - iq1)));
         GGML_ASSERT(tile_rows > 0);
 
         const uint32_t h = iq2; // head index
@@ -9004,7 +9532,7 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
         float S[Q_TILE_SZ];
         float M[Q_TILE_SZ];
 
-        for (int i = 0 ; i < Q_TILE_SZ; ++i) {
+        for (int i = 0 ; i < QT; ++i) {
             S[i] = 0.;
             M[i] = -INFINITY;
         }
@@ -9016,15 +9544,26 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
         // VKQ32:  Q_TILE_SZ * DV (FP32 output accumulator)
         // V32:    KV_TILE_SZ * DV (F32 buffer for V tile)
         // K_f32:  KV_TILE_SZ * DK (F32 buffer for K tile — GEMM path)
-        float * base  = (float *) params->wdata + ith*(Q_TILE_SZ*DK + 2*Q_TILE_SZ*KV_TILE_SZ + Q_TILE_SZ*DV + KV_TILE_SZ*DV + KV_TILE_SZ*DK + CACHE_LINE_SIZE_F32);
+        float * base  = (float *) params->wdata + ith*(Q_TILE_SZ*DK + 2*Q_TILE_SZ*KV_TILE_SZ + Q_TILE_SZ*DV + kv_alloc*DV + kv_alloc*DK + n_blocks*DK + 3*n_blocks + CACHE_LINE_SIZE_F32);
 
         void  * Q_q    = base;
         float * KQ     = (float *)((char *)base + Q_TILE_SZ * DK * sizeof(float));
         float * mask32 = KQ + Q_TILE_SZ * KV_TILE_SZ;
         float * VKQ32  = mask32 + Q_TILE_SZ * KV_TILE_SZ;
-        float * V32    = VKQ32 + Q_TILE_SZ * DV;
-        float * K_f32  = V32 + KV_TILE_SZ * DV;
+        float * V_all  = VKQ32 + Q_TILE_SZ * DV;     // [kv_alloc][DV]      (or one KV_TILE_SZ tile)
+        float * K_all  = V_all + kv_alloc * DV;      // [kv_alloc/KV][DK][KV_TILE_SZ]
 
+        // FlashPrefill scratch (stays in wdata even when K/V are staged in TCM)
+        float *   Kmean   = K_all + kv_alloc * DK;   // [n_blocks][DK] block-averaged keys
+        float *   fp_m    = Kmean + n_blocks * DK;   // [n_blocks]     per-block max probe logit
+        float *   fp_s    = fp_m + n_blocks;         // [n_blocks]     per-block exp-sum / score
+        int32_t * sel_idx = (int32_t *) (fp_s + n_blocks); // [n_blocks] selected block indices
+
+        // optional: the two big streaming buffers live in TCM instead of DDR
+        if (tcm_kv != nullptr) {
+            K_all = tcm_kv;
+            V_all   = tcm_kv + kv_alloc * DK;
+        }
         memset(VKQ32, 0, Q_TILE_SZ * DV * sizeof(float));
         memset(mask32, 0, Q_TILE_SZ * KV_TILE_SZ * sizeof(float));
 
@@ -9036,68 +9575,232 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
         const int iv3 = iq3 / rv3;
         const int iv2 = iq2 / rv2;
 
+        if (kv_hoist && (iq2 != cached_iq2 || iq3 != cached_iq3)) {
+            // New (q-head, seq): the cached K/V belongs to another head.  ik2/ik3 and iv2/iv3 are
+            // functions of iq2/iq3, so (iq2,iq3) is a sufficient key for both K and V.
+            cached_iq2 = iq2;
+            cached_iq3 = iq3;
+            kv_packed  = 0;
+            // The last kv tile is partial: its columns [nek1 % KV_TILE_SZ, KV_TILE_SZ) must read as
+            // zero, exactly as the old per-tile memset(K_f32/V32) guaranteed.
+            const int64_t last_tile = nek1 / KV_TILE_SZ;
+            const int64_t last_cols = nek1 - last_tile * KV_TILE_SZ;
+            if (last_cols > 0) {
+                float * Kt = K_all + last_tile * DK * KV_TILE_SZ;
+                float * Vt = V_all + last_tile * KV_TILE_SZ * DV;
+                for (int64_t dk = 0; dk < DK; dk++) {
+                    memset(Kt + dk * KV_TILE_SZ + last_cols, 0, (KV_TILE_SZ - last_cols) * sizeof(float));
+                }
+                memset(Vt + last_cols * DV, 0, (KV_TILE_SZ - last_cols) * DV * sizeof(float));
+            }
+        }
+
         {
             float * Q_f32 = (float *)Q_q;
             for (int tq = 0; tq < tile_rows; tq++) {
                 const float * pq = (const float *) ((char *) q->data + ((iq1 + tq)*nbq1 + iq2*nbq2 + iq3*nbq3));
                 memcpy(Q_f32 + tq * DK, pq, DK * sizeof(float));
             }
-            for (int tq = tile_rows; tq < Q_TILE_SZ; tq++) {
+            for (int tq = tile_rows; tq < QT; tq++) {
                 memset(Q_f32 + tq * DK, 0, DK * sizeof(float));
             }
         }
 
-        memset(K_f32, 0, DK * KV_TILE_SZ * sizeof(float));
-        memset(V32,   0, KV_TILE_SZ * DV * sizeof(float));
+        if (!kv_hoist) {
+            // legacy arm: a single KV_TILE_SZ tile, re-zeroed and re-packed for every q tile
+            memset(K_all, 0, DK * KV_TILE_SZ * sizeof(float));
+            memset(V_all, 0, KV_TILE_SZ * DV * sizeof(float));
+        }
 
-        for (int64_t ic = 0; ic < nek1; ic += KV_TILE_SZ) {
+        // Last causally reachable key block, taken from the MASK (not from iq1: in a cached
+        // context the query's absolute position is offset by the cached prefix).  The mask of a
+        // causal attention is a finite prefix that advances by one key per query row; verify that
+        // shape for this tile (two mask reads) and fall back to the full range otherwise.
+        int64_t jmax = n_blocks - 1;
+        int64_t pos_first = -1;
+        bool causal_ok = false;
+        if (mask != nullptr && tile_rows > 0 && spx_fa_causal_range_enabled()) {
+            const int64_t row_last = iq1 + tile_rows - 1;
+            const ggml_fp16_t * mp_last = (const ggml_fp16_t *) ((const char *) mask->data +
+                    row_last * mask->nb[1] + (iq2 % mask->ne[2]) * mask->nb[2] +
+                    (iq3 % mask->ne[3]) * mask->nb[3]);
+            const int64_t k_last = spx_fa_mask_last_finite(mp_last, nek1);
+            if (k_last >= 0) {
+                const int64_t k_first = k_last - (tile_rows - 1);
+                if (k_first >= 0) {
+                    const ggml_fp16_t * mp_first = (const ggml_fp16_t *) ((const char *) mask->data +
+                            iq1 * mask->nb[1] + (iq2 % mask->ne[2]) * mask->nb[2] +
+                            (iq3 % mask->ne[3]) * mask->nb[3]);
+                    const bool ok_first = GGML_CPU_FP16_TO_FP32(mp_first[k_first]) != -INFINITY &&
+                                          (k_first + 1 >= nek1 ||
+                                           GGML_CPU_FP16_TO_FP32(mp_first[k_first + 1]) == -INFINITY);
+                    if (ok_first) {
+                        jmax = k_last / KV_TILE_SZ;
+                        pos_first = k_first;
+                        causal_ok = true;
+                    }
+                }
+            }
+        }
+
+        // FlashPrefill: pick the key blocks for this Q tile from the probe scores.
+        // Only plain causal attention (mask present, no ALiBi/softcap) and long contexts qualify.
+        // The probe must be able to pool a key row: natively for f16 (the RVV path), through the
+        // per-row dequantisation (and its DK-sized stack scratch) for everything else.  f16 has no
+        // DK bound, so the feature keeps behaving exactly as before on f16 KV caches.
+        const auto & fp_cfg = spx_fa_fp_config();
+        const bool fp_kv_ok = k->type == GGML_TYPE_F16 ||
+                              ((k->type == GGML_TYPE_F32 || k->type == GGML_TYPE_Q8_0 ||
+                                k->type == GGML_TYPE_Q4_0) && DK <= SPX_FA_FP_MAX_DK);
+        const bool fp_active = causal_ok && fp_cfg.enabled &&
+                               max_bias <= 0.0f && logit_softcap == 0.0f &&
+                               nek1 >= fp_cfg.min_keys && tile_rows > 0 && fp_kv_ok;
+        int n_sel = 0;
+        if (fp_active) {
+            n_sel = spx_fa_fp_select((const float *) Q_q, (int) DK, tile_rows, pos_first, jmax,
+                    (const char *) k->data + ik2*nbk2 + ik3*nbk3, nbk1, nek1, n_blocks, k->type, scale,
+                    Kmean, fp_m, fp_s, sel_idx, fp_ciq2, fp_ciq3, fp_cblks, iq2, iq3);
+            static const bool fp_dbg = getenv("GGML_SPACEMIT_FA_FP_DEBUG") != nullptr;
+            if (fp_dbg) {
+                static int fp_dbg_n = 0;
+                if (fp_dbg_n++ < 400) {
+                    fprintf(stderr, "[FP] head=%d iq1=%d rows=%d keyblocks=%d selected=%d causal=%d\n",
+                            iq2, (int) iq1, tile_rows, (int) (jmax + 1), n_sel, (int) causal_ok);
+                }
+            }
+        }
+
+        // Physical block skipping: walk the selected block indices, or every causally reachable
+        // block when the approximation is off.  Blocks past jmax are all -inf, so this also skips
+        // their (otherwise O(rows*keys)) mask staging.
+        const int64_t n_iter = fp_active ? n_sel : (jmax + 1);
+        static const bool fp_loop_dbg = getenv("GGML_SPACEMIT_FA_FP_DEBUG") != nullptr;
+        int dbg_skipped = 0;
+        for (int64_t it = 0; it < n_iter; ++it) {
+            const int64_t ic = (fp_active ? (int64_t) sel_idx[it] : it) * KV_TILE_SZ;
+            if (ic >= nek1) {
+                break;
+            }
             const int kv_tile = (int)std::min((int64_t)KV_TILE_SZ, nek1 - ic);
+            const int64_t tile_idx = ic / KV_TILE_SZ;
+            float * K_f32 = kv_hoist ? K_all + tile_idx * DK * KV_TILE_SZ : K_all;
+            float * V32   = kv_hoist ? V_all + tile_idx * KV_TILE_SZ * DV : V_all;
+            // true => this (q-head, seq, kv tile) is already packed, reuse it verbatim
+            const bool tile_cached = kv_hoist && (ic < kv_packed);
+            const bool spx_f16 = spx_fa_mask_f16() && spx_fa_mask_rvv_enabled();
+            const bool spx_pfn = spx_fa_mask_pfn() && ic + KV_TILE_SZ < nek1;
+#if defined(__riscv_v_intrinsic)
+            const int  kpack_mode = spx_fa_kpack_mode();
+#else
+            const int  kpack_mode = 0;
+#endif
 
             // skip the tile entirely if all the masks are -inf
             if (mask) {
                 bool can_skip = true;
                 for (int tq = 0; tq < tile_rows; tq++) {
                     const ggml_fp16_t * mp_row = (const ggml_fp16_t *)((const char *) mask->data + (iq1 + tq)*mask->nb[1] + (iq2%mask->ne[2])*mask->nb[2] + (iq3%mask->ne[3])*mask->nb[3]);
+                    if (spx_pfn) {
+                        __builtin_prefetch((const char *) mp_row + ((size_t) ic + KV_TILE_SZ)
+                                           * sizeof(ggml_fp16_t), 0, 1);
+                    }
+#if defined(__riscv_v_intrinsic)
+                    if (spx_fa_mask_rvv_enabled()) {
+                        float * mrow = mask32 + tq * KV_TILE_SZ;
+                        int64_t t = 0;
+                        int nfinite = 0;
+                        for (; t < kv_tile; ) {
+                            const size_t vl = __riscv_vsetvl_e16m2(kv_tile - t);
+                            const vfloat16m2_t h = __riscv_vle16_v_f16m2(
+                                (const _Float16 *) (mp_row + ic + t), vl);
+                            const vfloat32m4_t f = __riscv_vfmul_vf_f32m4(
+                                __riscv_vfwcvt_f_f_v_f32m4(h, vl), slope, vl);
+                            if (spx_f16) {
+                                // f16 array has its OWN row stride (KV_TILE_SZ f16 = 128 B),
+                                // not the f32 mrow pointer's 256 B.
+                                __riscv_vse16_v_f16m2((_Float16 *) mask32 + tq * KV_TILE_SZ + t, h, vl);
+                            } else {
+                                __riscv_vse32_v_f32m4(mrow + t, f, vl);
+                            }
+                            nfinite += (int) __riscv_vcpop_m_b8(
+                                __riscv_vmfne_vf_f32m4_b8(f, -INFINITY, vl), vl);
+                            t += (int64_t) vl;
+                        }
+                        if (nfinite != 0) {
+                            can_skip = false;
+                        }
+                    } else
+#endif
+                    {
                     for (int tk = 0; tk < kv_tile; tk++) {
                         mask32[tq * KV_TILE_SZ + tk] = slope * GGML_CPU_FP16_TO_FP32(mp_row[ic + tk]);
                         if (mask32[tq * KV_TILE_SZ + tk] != -INFINITY) {
                             can_skip = false;
                         }
                     }
+                    }
                     // Pad remaining mask entries with -inf
                     for (int tk = kv_tile; tk < KV_TILE_SZ; tk++) {
-                        mask32[tq * KV_TILE_SZ + tk] = -INFINITY;
+                        if (spx_f16) {
+                            ((ggml_fp16_t *) mask32)[tq * KV_TILE_SZ + tk] = GGML_CPU_FP32_TO_FP16(-INFINITY);
+                        } else {
+                            mask32[tq * KV_TILE_SZ + tk] = -INFINITY;
+                        }
                     }
                 }
 
                 if (can_skip) {
+                    dbg_skipped++;
                     continue;
                 }
             }
 
             // Pack K tile transposed: K_f32[dk][kv] so KV_TILE is contiguous (SIMD dim)
             // Zero-pad the last tile so the GEMM always operates on KV_TILE_SZ columns
+            if (!tile_cached) {
             for (int tk = 0; tk < kv_tile; tk++) {
                 const char * k_data = (const char *)k->data + (ic + tk)*nbk1 + ik2*nbk2 + ik3*nbk3;
                 if (kv_type == GGML_TYPE_F16) {
                     const ggml_fp16_t * k_f16 = (const ggml_fp16_t *)k_data;
-                    for (int64_t dk = 0; dk < DK; dk++) {
-                        K_f32[dk * KV_TILE_SZ + tk] = GGML_CPU_FP16_TO_FP32(k_f16[dk]);
+#if defined(__riscv_v_intrinsic)
+                    if (kpack_mode != 0) {
+                        // vectorized transposed pack: widen the (contiguous) key row to f32, then
+                        // strided-store it down the column K_f32[dk*KV_TILE_SZ + tk]
+                        const ptrdiff_t kstride = (ptrdiff_t) KV_TILE_SZ * (ptrdiff_t) sizeof(float);
+                        for (int64_t dk = 0; dk < DK; ) {
+                            const size_t vl = __riscv_vsetvl_e16m4(DK - dk);
+                            const vfloat16m4_t h = __riscv_vle16_v_f16m4((const _Float16 *) (k_f16 + dk), vl);
+                            const vfloat32m8_t f = __riscv_vfwcvt_f_f_v_f32m8(h, vl);
+                            __riscv_vsse32_v_f32m8(K_f32 + tk + dk * KV_TILE_SZ, kstride, f, vl);
+                            dk += (int64_t) vl;
+                        }
                     }
-                } else {
+#endif
+                    if (kpack_mode == 0 || kpack_mode == 2) {
+                        for (int64_t dk = 0; dk < DK; dk++) {
+                            K_f32[dk * KV_TILE_SZ + tk] = GGML_CPU_FP16_TO_FP32(k_f16[dk]);
+                        }
+                    }
+                } else if (kv_type == GGML_TYPE_F32) {
                     const float * k_f32_src = (const float *)k_data;
                     for (int64_t dk = 0; dk < DK; dk++) {
                         K_f32[dk * KV_TILE_SZ + tk] = k_f32_src[dk];
                     }
+                } else {
+                    ggml_fa_dequant_row(K_f32 + tk, KV_TILE_SZ, k_data, DK, kv_type);
                 }
             }
-            memset(KQ, 0, Q_TILE_SZ * KV_TILE_SZ * sizeof(float));
-            simd_gemm(KQ, (const float *)Q_q, K_f32, Q_TILE_SZ, DK, KV_TILE_SZ);
-            ggml_vec_scale_f32(Q_TILE_SZ * KV_TILE_SZ, KQ, scale);
+            if (ic == kv_packed) {
+                kv_packed = ic + KV_TILE_SZ;   // only ever extend a contiguous packed prefix
+            }
+            }
+            memset(KQ, 0, QT * KV_TILE_SZ * sizeof(float));
+            simd_gemm(KQ, (const float *)Q_q, K_f32, QT, DK, KV_TILE_SZ);
+            ggml_vec_scale_f32(QT * KV_TILE_SZ, KQ, scale);
 
             // Set padded KQ entries to -inf so softmax gives them zero weight
             if (kv_tile < KV_TILE_SZ) {
-                for (int tq = 0; tq < Q_TILE_SZ; tq++) {
+                for (int tq = 0; tq < QT; tq++) {
                     for (int tk = kv_tile; tk < KV_TILE_SZ; tk++) {
                         KQ[tq * KV_TILE_SZ + tk] = -INFINITY;
                     }
@@ -9105,17 +9808,24 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
             }
 
             if (logit_softcap != 0.0f) {
-                ggml_vec_tanh_f32(Q_TILE_SZ * KV_TILE_SZ, KQ, KQ);
-                ggml_vec_scale_f32(Q_TILE_SZ * KV_TILE_SZ, KQ, logit_softcap);
+                ggml_vec_tanh_f32(QT * KV_TILE_SZ, KQ, KQ);
+                ggml_vec_scale_f32(QT * KV_TILE_SZ, KQ, logit_softcap);
             }
 
             if (mask) {
-                ggml_vec_add_f32(tile_rows * KV_TILE_SZ, KQ, KQ, mask32);
+#if defined(__riscv_v_intrinsic)
+                if (spx_f16) {
+                    spx_fa_mask_add_f16(tile_rows * KV_TILE_SZ, KQ, (const ggml_fp16_t *) mask32, slope);
+                } else
+#endif
+                {
+                    ggml_vec_add_f32(tile_rows * KV_TILE_SZ, KQ, KQ, mask32);
+                }
             }
 
             bool skip[Q_TILE_SZ] = {};
 
-            for (int tq = 0; tq < Q_TILE_SZ; tq++) {
+            for (int tq = 0; tq < QT; tq++) {
                 float * kq_row = KQ + tq * KV_TILE_SZ;
 
                 float tile_max;
@@ -9142,20 +9852,33 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
 
             // V accumulation: VKQ32 += softmax(KQ) * V
             // Pack V tile to contiguous F32, zero-padded
+            if (!tile_cached) {
             for (int tk = 0; tk < kv_tile; tk++) {
                 const char * v_data = (const char *)v->data + (ic + tk)*nbv1 + iv2*nbv2 + iv3*nbv3;
                 if (kv_type == GGML_TYPE_F16) {
                     ggml_cpu_fp16_to_fp32((const ggml_fp16_t *)v_data, V32 + tk * DV, DV);
-                } else {
+                } else if (kv_type == GGML_TYPE_F32) {
                     memcpy(V32 + tk * DV, v_data, DV * sizeof(float));
+                } else {
+                    ggml_fa_dequant_row(V32 + tk * DV, 1, v_data, DV, kv_type);
                 }
             }
-            for (int tq = 0; tq < Q_TILE_SZ; tq++) {
+            }
+            for (int tq = 0; tq < QT; tq++) {
                 if (skip[tq]) {
                     memset(KQ + tq * KV_TILE_SZ, 0, KV_TILE_SZ * sizeof(float));
                 }
             }
-            simd_gemm(VKQ32, KQ, V32, Q_TILE_SZ, KV_TILE_SZ, DV);
+            simd_gemm(VKQ32, KQ, V32, QT, KV_TILE_SZ, DV);
+        }
+
+        if (fp_loop_dbg) {
+            static int fp_loop_n = 0;
+            if (fp_loop_n++ < 96) {
+                fprintf(stderr, "[FPloop] iq1=%d rows=%d iter=%lld mask_skip=%d jmax=%lld causal=%d\n",
+                        (int) iq1, tile_rows, (long long) n_iter, dbg_skipped,
+                        (long long) jmax, (int) causal_ok);
+            }
         }
 
         // sinks (apply only to valid rows in the tile)
@@ -9193,6 +9916,12 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
 
         ir += tile_rows;
     }
+}
+
+// Entry point for backends that want the tiled algorithm with K_f32/V32 staged in TCM.
+void ggml_compute_forward_flash_attn_ext_tiled_tcm(
+        const ggml_compute_params * params, ggml_tensor * dst, int ir0, int ir1, float * tcm_kv) {
+    ggml_compute_forward_flash_attn_ext_tiled(params, dst, ir0, ir1, tcm_kv);
 }
 
 // Reduction function: combines partial results across KV chunks
@@ -9372,12 +10101,25 @@ static void ggml_compute_forward_flash_attn_ext_f16(
 
         const int64_t dr = (nr + nchunk - 1) / nchunk;
 
-        static constexpr int64_t Q_TILE_SZ  = ggml_fa_tile_config::Q;
+        const int64_t QT = spx_fa_tile_q(neq1);
         bool use_tiled = !use_ref &&
                                (q->type == GGML_TYPE_F32 &&
-                                kv_is_f32_or_f16 &&
+                                ggml_fa_kv_supported_tiled(k->type) &&
                                 k->type == v->type &&
-                                neq1 >= Q_TILE_SZ);
+                                neq1 >= QT);
+
+        static const bool fa_probe_on = (getenv("LLAMA_FA_PROBE") != nullptr);
+        if (fa_probe_on) {
+            static int probe_n = 0;
+            if (probe_n++ < 12) {
+                fprintf(stderr,
+                        "[FAPROBE] DK=%lld DV=%lld nq=%lld nkv=%lld q=%s k=%s v=%s "
+                        "split_path=%d tiled=%d use_ref=%d th=%d\n",
+                        (long long) DK, (long long) DV, (long long) neq1, (long long) nek1,
+                        ggml_type_name(q->type), ggml_type_name(k->type), ggml_type_name(v->type),
+                        (int) use_split_kv_path, (int) use_tiled, (int) use_ref, nth);
+            }
+        }
 #ifdef GGML_SIMD
 #if defined(__ARM_FEATURE_SVE)
         const int64_t f32_epr = svcntw();
@@ -9386,6 +10128,15 @@ static void ggml_compute_forward_flash_attn_ext_f16(
 #endif
         use_tiled &= (DV % f32_epr == 0);
 #endif
+        static const bool kvdbg_on = (getenv("GGML_SPACEMIT_FA_KVHOIST_DBG") != nullptr);
+        if (kvdbg_on) {
+            static int kvdbg_n = 0;
+            if (kvdbg_n++ < 64) {
+                fprintf(stderr, "[KVDBG] neq1=%lld neq2=%lld nek1=%lld nr=%lld nth=%d nchunk=%lld dr=%lld QT=%lld tiled=%d\n",
+                        (long long) neq1, (long long) neq2, (long long) nek1, (long long) nr,
+                        nth, (long long) nchunk, (long long) dr, (long long) QT, (int) use_tiled);
+            }
+        }
         int current_chunk = ith;
 
         while (current_chunk < nchunk) {
@@ -9393,7 +10144,7 @@ static void ggml_compute_forward_flash_attn_ext_f16(
             const int64_t ir1 = MIN(ir0 + dr, nr);
 
             if (use_tiled) {
-                ggml_compute_forward_flash_attn_ext_tiled(params, dst, ir0, ir1);
+                ggml_compute_forward_flash_attn_ext_tiled(params, dst, ir0, ir1, nullptr);
             } else {
                 ggml_compute_forward_flash_attn_ext_f16_one_chunk(params, dst, ir0, ir1, 0, nek1, nullptr, 0);
             }
@@ -9827,14 +10578,124 @@ void ggml_compute_forward_ssm_conv(
 }
 
 // ggml_compute_forward_ssm_conv_state
+//
+// Short causal depthwise Conv1D over [retained conv state ++ current tokens], for the GDN (gated
+// delta net) family. The conv state is laid out as
+//
+//     [head_dim, head_num, conv_len, n_seqs]        (conv_len = d_conv - 1, head_dim innermost)
+//
+// so a conv "channel vector" is contiguous and both the state taps and the output vectorize with
+// UNIT stride (the old time-fastest layout needed a strided gather for the state). Because the
+// channel dim is contiguous, a channel count that is a multiple of the vector length needs no tail
+// handling and no padding.
+//
+// Decoding (n_t == 1) and prefill (n_t > 1) are separate sub-kernels: decode is a plain FIR over
+// the d_conv taps plus a one-tap state shift, prefill is a sliding window over [state ++ qkv].
+// Both fall back to the same scalar loop for layouts / d_conv the RVV paths do not cover.
+
+// Scalar fallback: any d_conv, any strides. `ir0`/`ir` are the channel block owned by this thread.
+static void ggml_compute_forward_ssm_conv_state_scalar(ggml_tensor * dst, const int ir0, const int ir) {
+    const ggml_tensor * state     = dst->src[0]; // [head_dim, head_num, conv_len, n_seqs]
+    const ggml_tensor * qkv       = dst->src[1]; // [n_t, d_inner, n_seqs]
+    const ggml_tensor * weight    = dst->src[2]; // [d_conv, d_inner]
+    const ggml_tensor * dst_state = dst->src[3]; // optional, same shape as state
+
+    const int nc      = weight->ne[0];
+    const int n_t     = dst->ne[1];
+    const int n_s     = dst->ne[2];
+
+    const int64_t nc1 = nc - 1;
+    const int64_t hd  = state->ne[0]; // head_dim
+
+    const size_t nb_d0 = dst->nb[0],   nb_d1 = dst->nb[1],   nb_d2 = dst->nb[2];
+    const size_t nb_s0 = state->nb[0], nb_s1 = state->nb[1], nb_s2 = state->nb[2], nb_s3 = state->nb[3];
+    const size_t nb_q0 = qkv->nb[0],   nb_q1 = qkv->nb[1],   nb_q2 = qkv->nb[2];
+    const size_t nb_w0 = weight->nb[0], nb_w1 = weight->nb[1];
+    const char * sp = (const char *) state->data;
+    const char * qp = (const char *) qkv->data;
+    const char * wp = (const char *) weight->data;
+    char *       dp = (char *) dst->data;
+
+    const bool apply_silu = ggml_get_op_params_i32(dst, 0) != 0;
+
+    // byte offset of channel `ch` of tap `pos` of the [state ++ qkv] sliding window
+    const auto sval_at = [&](int pos, int ch, int i3) -> float {
+        const int64_t h = ch / hd;
+        const int64_t d = ch % hd;
+        return (pos < nc1)
+            ? *(const float *) (sp + pos * nb_s2 + h * nb_s1 + d * nb_s0 + i3 * nb_s3)
+            : *(const float *) (qp + (pos - nc1) * nb_q0 + ch * nb_q1 + i3 * nb_q2);
+    };
+
+    for (int i3 = 0; i3 < n_s; ++i3) {
+        for (int i2 = 0; i2 < n_t; ++i2) {
+            for (int i1 = 0; i1 < ir; ++i1) {
+                const int ch = ir0 + i1;
+                float sumf = 0.0f;
+
+                for (int i0 = 0; i0 < nc; ++i0) {
+                    sumf += sval_at(i2 + i0, ch, i3) * *(const float *) (wp + i0 * nb_w0 + ch * nb_w1);
+                }
+                *(float *) (dp + ch * nb_d0 + i2 * nb_d1 + i3 * nb_d2) =
+                    apply_silu ? ggml_silu_f32(sumf) : sumf;
+            }
+        }
+
+        // Write the new conv state (the last conv_len taps of [state ++ qkv]) straight into the
+        // recurrent conv cache (dst_state), so the main path needs no ggml_cpy back to the cache.
+        if (dst_state) {
+            const size_t nb_ds0 = dst_state->nb[0], nb_ds1 = dst_state->nb[1],
+                         nb_ds2 = dst_state->nb[2], nb_ds3 = dst_state->nb[3];
+            char *       dsp    = (char *) dst_state->data;
+            for (int i1 = 0; i1 < ir; ++i1) {
+                const int ch = ir0 + i1;
+                const int64_t h = ch / hd;
+                const int64_t d = ch % hd;
+                for (int t = 0; t < nc1; ++t) {
+                    const int pos = n_t + t;
+                    const float sval = (pos < nc1)
+                        ? *(const float *) (sp + pos * nb_s2 + h * nb_s1 + d * nb_s0 + i3 * nb_s3)
+                        : *(const float *) (qp + (pos - nc1) * nb_q0 + ch * nb_q1 + i3 * nb_q2);
+                    *(float *) (dsp + t * nb_ds2 + h * nb_ds1 + d * nb_ds0 + i3 * nb_ds3) = sval;
+                }
+            }
+        }
+    }
+}
+
+#if defined(__riscv_v_intrinsic)
+// SiLU for the conv epilogue: vfdiv is the expensive part of ggml_v_silu_m2.  The default arm
+// uses the RVV reciprocal estimate plus two Newton steps (~2^-28 relative error);
+// GGML_SPACEMIT_SSM_SILU_FAST=0 restores the bit-identical ggml_v_silu_m2 path for A/B.
+static bool ssm_silu_fast_enabled(void) {
+    static int e = -1;
+    if (e == -1) {
+        const char * s = getenv("GGML_SPACEMIT_SSM_SILU_FAST");
+        e = (s != NULL && s[0] == '0') ? 0 : 1;
+    }
+    return e != 0;
+}
+
+static inline vfloat32m2_t ssm_silu_m2(vfloat32m2_t x, int vl, bool fast) {
+    if (!fast) {
+        return ggml_v_silu_m2(x, vl);
+    }
+    const vfloat32m2_t e = ggml_v_expf_m2(__riscv_vfneg_v_f32m2(x, vl), vl);
+    const vfloat32m2_t d = __riscv_vfadd_vf_f32m2(e, 1.0f, vl);
+    vfloat32m2_t r = __riscv_vfrec7_v_f32m2(d, vl);
+    r = __riscv_vfmul_vv_f32m2(r, __riscv_vfnmsac_vv_f32m2(__riscv_vfmv_v_f_f32m2(2.0f, vl), d, r, vl), vl);
+    r = __riscv_vfmul_vv_f32m2(r, __riscv_vfnmsac_vv_f32m2(__riscv_vfmv_v_f_f32m2(2.0f, vl), d, r, vl), vl);
+    return __riscv_vfmul_vv_f32m2(x, r, vl);
+}
+#endif
 
 static void ggml_compute_forward_ssm_conv_state_f32(
         const ggml_compute_params * params,
         ggml_tensor * dst) {
-    const ggml_tensor * state     = dst->src[0]; // [d_conv-1, d_inner, n_seqs]
+    const ggml_tensor * state     = dst->src[0]; // [head_dim, head_num, conv_len, n_seqs]
     const ggml_tensor * qkv       = dst->src[1]; // [n_t, d_inner, n_seqs]
     const ggml_tensor * weight    = dst->src[2]; // [d_conv, d_inner]
-    const ggml_tensor * dst_state = dst->src[3]; // optional [row_count, n_seqs]
+    const ggml_tensor * dst_state = dst->src[3]; // optional, same shape as state
 
     const int ith = params->ith;
     const int nth = params->nth;
@@ -9845,9 +10706,9 @@ static void ggml_compute_forward_ssm_conv_state_f32(
     const int n_s     = dst->ne[2];    // sequences in the batch
 
     GGML_ASSERT(dst->ne[0] == d_inner);
-    GGML_ASSERT(state->ne[0] == nc - 1);
-    GGML_ASSERT(state->ne[1] == d_inner);
-    GGML_ASSERT(state->ne[2] == n_s);
+    GGML_ASSERT(state->ne[0] * state->ne[1] == d_inner);
+    GGML_ASSERT(state->ne[2] == nc - 1);
+    GGML_ASSERT(state->ne[3] == n_s);
     GGML_ASSERT(qkv->ne[0] == n_t);
     GGML_ASSERT(qkv->ne[1] == d_inner);
     GGML_ASSERT(qkv->ne[2] == n_s);
@@ -9858,56 +10719,195 @@ static void ggml_compute_forward_ssm_conv_state_f32(
     const int ir1 = MIN(ir0 + dr, d_inner);
     const int ir  = ir1 - ir0;
 
-    const int64_t nc1 = nc - 1; // d_conv - 1
+    if (ir <= 0) {
+        return;
+    }
+
+    const int64_t nc1 = nc - 1;        // conv_len
+    const int64_t hd  = state->ne[0];  // head_dim
 
     // hoist strides/data out of the hot loops so the compiler can keep them in registers
     const size_t nb_d0 = dst->nb[0],   nb_d1 = dst->nb[1],   nb_d2 = dst->nb[2];
-    const size_t nb_s0 = state->nb[0], nb_s1 = state->nb[1], nb_s2 = state->nb[2];
+    const size_t nb_s0 = state->nb[0], nb_s1 = state->nb[1], nb_s2 = state->nb[2], nb_s3 = state->nb[3];
     const size_t nb_q0 = qkv->nb[0],   nb_q1 = qkv->nb[1],   nb_q2 = qkv->nb[2];
-    const size_t nb_w0 = weight->nb[0], nb_w1 = weight->nb[1];
+    const size_t nb_w1 = weight->nb[1];
     const char * sp = (const char *) state->data;
     const char * qp = (const char *) qkv->data;
     const char * wp = (const char *) weight->data;
     char *       dp = (char *) dst->data;
 
-    for (int i3 = 0; i3 < n_s; ++i3) {
-        for (int i2 = 0; i2 < n_t; ++i2) {
-            float * x = (float *) (dp + ir0 * nb_d0 + i2 * nb_d1 + i3 * nb_d2);
+    const bool apply_silu = ggml_get_op_params_i32(dst, 0) != 0;
+#if defined(__riscv_v_intrinsic)
+    const bool silu_fast  = ssm_silu_fast_enabled();
+#endif
 
-            for (int i1 = 0; i1 < ir; ++i1) {
-                float sumf = 0.0f;
+    // Vectorized paths: one vector lane per CHANNEL. With the [.., head_dim, head_num] inner dims
+    // contiguous, a channel vector loads/stores with unit stride; only the time tap and the sequence
+    // need a stride. The d_conv taps of a channel vector come from one segment load (the weight is
+    // [d_conv, d_inner], tap fastest). The SiLU epilogue uses the same exp as the ggml_silu op but a
+    // reciprocal estimate + Newton instead of vfdiv (see ssm_silu_m2); GGML_SPACEMIT_SSM_SILU_FAST=0
+    // restores the bit-identical path. Falls through to the scalar loop for anything else.
+#if defined(__riscv_v_intrinsic)
+    if (__riscv_vlenb() == 32 && nc == 4 &&
+        nb_s0 == sizeof(float) && nb_s1 == (size_t) hd * sizeof(float) &&
+        nb_q1 == sizeof(float) && nb_d0 == sizeof(float)) {
+        const size_t nb_ds0 = dst_state ? dst_state->nb[0] : 0;
+        const size_t nb_ds2 = dst_state ? dst_state->nb[2] : 0;
+        const size_t nb_ds3 = dst_state ? dst_state->nb[3] : 0;
+        char *       dsp    = dst_state ? (char *) dst_state->data : nullptr;
 
-                for (int i0 = 0; i0 < nc; ++i0) {
-                    const int pos = i2 + i0;
-                    const float sval = (pos < nc1)
-                        ? *(const float *) (sp + pos * nb_s0 + (ir0 + i1) * nb_s1 + i3 * nb_s2)
-                        : *(const float *) (qp + (pos - nc1) * nb_q0 + (ir0 + i1) * nb_q1 + i3 * nb_q2);
-                    const float wval = *(const float *) (wp + i0 * nb_w0 + (ir0 + i1) * nb_w1);
+        if (n_t == 1) {
+            // ---- decode sub-kernel: FIR over the three retained taps + the new token, then shift
+            //      the state by one tap (dst = [state[1], state[2], qkv[0]] for d_conv == 4)
+            for (int i3 = 0; i3 < n_s; ++i3) {
+                const char * sp3 = sp + i3 * nb_s3;
+                const char * qp3 = qp + i3 * nb_q2;
+                char *       dp3 = dp + i3 * nb_d2;
 
-                    sumf += sval * wval;
+                for (int ch = ir0; ch < ir1; ) {
+                    const int vl = __riscv_vsetvl_e32m2(ir1 - ch);
+
+                    const vfloat32m2x4_t wt = __riscv_vlseg4e32_v_f32m2x4((const float *) (wp + ch * nb_w1), vl);
+                    const vfloat32m2_t w0 = __riscv_vget_v_f32m2x4_f32m2(wt, 0);
+                    const vfloat32m2_t w1 = __riscv_vget_v_f32m2x4_f32m2(wt, 1);
+                    const vfloat32m2_t w2 = __riscv_vget_v_f32m2x4_f32m2(wt, 2);
+                    const vfloat32m2_t w3 = __riscv_vget_v_f32m2x4_f32m2(wt, 3);
+
+                    const float * s0 = (const float *) (sp3 + 0 * nb_s2 + ch * sizeof(float));
+                    const float * s1 = (const float *) (sp3 + 1 * nb_s2 + ch * sizeof(float));
+                    const float * s2 = (const float *) (sp3 + 2 * nb_s2 + ch * sizeof(float));
+                    const float * q0 = (const float *) (qp3 + ch * nb_q1);
+
+                    const vfloat32m2_t v1 = __riscv_vle32_v_f32m2(s1, vl);
+                    const vfloat32m2_t v2 = __riscv_vle32_v_f32m2(s2, vl);
+                    const vfloat32m2_t v3 = __riscv_vle32_v_f32m2(q0, vl);
+
+                    vfloat32m2_t a = __riscv_vfmul_vv_f32m2(__riscv_vle32_v_f32m2(s0, vl), w0, vl);
+                    a = __riscv_vfmacc_vv_f32m2(a, v1, w1, vl);
+                    a = __riscv_vfmacc_vv_f32m2(a, v2, w2, vl);
+                    a = __riscv_vfmacc_vv_f32m2(a, v3, w3, vl);
+
+                    if (apply_silu) {
+                        a = ssm_silu_m2(a, vl, silu_fast);
+                    }
+                    __riscv_vse32_v_f32m2((float *) (dp3 + ch * nb_d0), a, vl);
+
+                    if (dsp) {
+                        char * ds = dsp + i3 * nb_ds3 + ch * nb_ds0;
+                        __riscv_vse32_v_f32m2((float *) (ds + 0 * nb_ds2), v1, vl);
+                        __riscv_vse32_v_f32m2((float *) (ds + 1 * nb_ds2), v2, vl);
+                        __riscv_vse32_v_f32m2((float *) (ds + 2 * nb_ds2), v3, vl);
+                    }
+                    ch += vl;
                 }
-                x[i1] = sumf;
+            }
+        } else {
+            // ---- prefill sub-kernel: sliding window over [state ++ qkv]
+            const int T = 8;   // time tile: keeps the (t .. t+3) row slab hot while walking all channels
+
+            for (int i3 = 0; i3 < n_s; ++i3) {
+                const char * sp3 = sp + i3 * nb_s3;
+                const char * qp3 = qp + i3 * nb_q2;
+                char *       dp3 = dp + i3 * nb_d2;
+
+                for (int t0 = 0; t0 < n_t; t0 += T) {
+                    const int t1 = MIN(t0 + T, n_t);
+
+                    for (int ch = ir0; ch < ir1; ) {
+                        const int vl = __riscv_vsetvl_e32m2(ir1 - ch);
+
+                        const vfloat32m2x4_t wt = __riscv_vlseg4e32_v_f32m2x4((const float *) (wp + ch * nb_w1), vl);
+                        const vfloat32m2_t w0 = __riscv_vget_v_f32m2x4_f32m2(wt, 0);
+                        const vfloat32m2_t w1 = __riscv_vget_v_f32m2x4_f32m2(wt, 1);
+                        const vfloat32m2_t w2 = __riscv_vget_v_f32m2x4_f32m2(wt, 2);
+                        const vfloat32m2_t w3 = __riscv_vget_v_f32m2x4_f32m2(wt, 3);
+
+                        // tap `pos` of the window: the retained state first, then the new tokens
+                        const auto tap = [&](int pos) -> vfloat32m2_t {
+                            return (pos < nc1)
+                                ? __riscv_vle32_v_f32m2((const float *) (sp3 + pos * nb_s2 + ch * sizeof(float)), vl)
+                                : __riscv_vle32_v_f32m2((const float *) (qp3 + (pos - nc1) * nb_q0 + ch * nb_q1), vl);
+                        };
+
+                        // two output times per iteration over a ROLLING 5-row register window:
+                        // consecutive pairs share 3 rows, so only 2 new rows are loaded per pair, and
+                        // the two accumulators give the in-order core an independent chain to overlap
+                        int t = t0;
+                        if (t + 1 < t1) {
+                            vfloat32m2_t r0 = tap(t);
+                            vfloat32m2_t r1 = tap(t + 1);
+                            vfloat32m2_t r2 = tap(t + 2);
+                            vfloat32m2_t r3 = tap(t + 3);
+                            vfloat32m2_t r4 = tap(t + 4);
+
+                            for (; t + 1 < t1; t += 2) {
+                                vfloat32m2_t a = __riscv_vfmul_vv_f32m2(r0, w0, vl);
+                                a = __riscv_vfmacc_vv_f32m2(a, r1, w1, vl);
+                                a = __riscv_vfmacc_vv_f32m2(a, r2, w2, vl);
+                                a = __riscv_vfmacc_vv_f32m2(a, r3, w3, vl);
+
+                                vfloat32m2_t b = __riscv_vfmul_vv_f32m2(r1, w0, vl);
+                                b = __riscv_vfmacc_vv_f32m2(b, r2, w1, vl);
+                                b = __riscv_vfmacc_vv_f32m2(b, r3, w2, vl);
+                                b = __riscv_vfmacc_vv_f32m2(b, r4, w3, vl);
+
+                                if (apply_silu) {
+                                    a = ssm_silu_m2(a, vl, silu_fast);
+                                    b = ssm_silu_m2(b, vl, silu_fast);
+                                }
+                                __riscv_vse32_v_f32m2((float *) (dp3 + (ch * nb_d0 + t * nb_d1)), a, vl);
+                                __riscv_vse32_v_f32m2((float *) (dp3 + (ch * nb_d0 + (t + 1) * nb_d1)), b, vl);
+
+                                // roll the window to rows t+2..t+6; guarded so it never reads past the tensor
+                                r0 = r2;
+                                r1 = r3;
+                                r2 = r4;
+                                if (t + 2 < t1) {
+                                    r3 = tap(t + 5);
+                                    r4 = tap(t + 6);
+                                }
+                            }
+                        }
+                        for (; t < t1; ++t) {
+                            vfloat32m2_t a = __riscv_vfmul_vv_f32m2(tap(t), w0, vl);
+                            a = __riscv_vfmacc_vv_f32m2(a, tap(t + 1), w1, vl);
+                            a = __riscv_vfmacc_vv_f32m2(a, tap(t + 2), w2, vl);
+                            a = __riscv_vfmacc_vv_f32m2(a, tap(t + 3), w3, vl);
+                            if (apply_silu) {
+                                a = ssm_silu_m2(a, vl, silu_fast);
+                            }
+                            __riscv_vse32_v_f32m2((float *) (dp3 + (ch * nb_d0 + t * nb_d1)), a, vl);
+                        }
+                        ch += vl;
+                    }
+                }
+
+                // state write-back: the last conv_len taps of [state ++ qkv]
+                if (dsp) {
+                    char * ds3 = dsp + i3 * nb_ds3;
+                    // n_t >= conv_len (every real call): all retained taps come from qkv
+                    const bool from_qkv = n_t >= nc1;
+                    for (int ch = ir0; ch < ir1; ) {
+                        const int vl = __riscv_vsetvl_e32m2(ir1 - ch);
+                        for (int t = 0; t < nc1; ++t) {
+                            const int pos = n_t + t;
+                            const vfloat32m2_t v = from_qkv
+                                ? __riscv_vle32_v_f32m2((const float *) (qp3 + (pos - nc1) * nb_q0 + ch * nb_q1), vl)
+                                : (pos < nc1)
+                                    ? __riscv_vle32_v_f32m2((const float *) (sp3 + pos * nb_s2 + ch * sizeof(float)), vl)
+                                    : __riscv_vle32_v_f32m2((const float *) (qp3 + (pos - nc1) * nb_q0 + ch * nb_q1), vl);
+                            __riscv_vse32_v_f32m2((float *) (ds3 + t * nb_ds2 + ch * nb_ds0), v, vl);
+                        }
+                        ch += vl;
+                    }
+                }
             }
         }
-
-        // Write the new conv state (the last d_conv-1 taps of [state ++ qkv]) directly into the
-        // recurrent conv cache (dst_state), avoiding a separate ggml_cpy back to conv_states_all.
-        // Cache row layout is [time (d_conv-1) fastest, channel].
-        if (dst_state) {
-            const size_t nb_ds0 = dst_state->nb[0], nb_ds1 = dst_state->nb[1];
-            char *       dsp    = (char *) dst_state->data;
-            for (int i1 = 0; i1 < ir; ++i1) {
-                const int ch = ir0 + i1;
-                for (int t = 0; t < nc1; ++t) {
-                    const int pos = n_t + t;
-                    const float sval = (pos < nc1)
-                        ? *(const float *) (sp + pos * nb_s0 + ch * nb_s1 + i3 * nb_s2)
-                        : *(const float *) (qp + (pos - nc1) * nb_q0 + ch * nb_q1 + i3 * nb_q2);
-                    *(float *) (dsp + (t + ch * nc1) * nb_ds0 + i3 * nb_ds1) = sval;
-                }
-            }
-        }
+        return;
     }
+#endif
+
+    ggml_compute_forward_ssm_conv_state_scalar(dst, ir0, ir);
 }
 
 void ggml_compute_forward_ssm_conv_state(
@@ -11102,6 +12102,35 @@ static inline float spx_gdn_dot_f32(int n, const float * a, const float * b) {
     return __riscv_vfmv_f_s_f32m1_f32(
         __riscv_vfredusum_vs_f32m4_f32m1(vacc, __riscv_vfmv_v_f_f32m1(0.0f, 1), vlmax));
 }
+
+// sum_k = <row, k> and sum_q = <row, q> in ONE traversal of the row (two independent accumulator
+// chains for ILP). Steps, tail handling and the final reduction match spx_gdn_dot_f32 exactly, so
+// both results are bit-identical to two separate dot_f32 calls - only the row load is shared.
+static inline void spx_gdn_dot2_f32(int n, const float * row, const float * k, const float * q,
+                                    float * sk, float * sq) {
+    const size_t vlmax = __riscv_vsetvlmax_e32m4();
+    vfloat32m4_t  ak    = __riscv_vfmv_v_f_f32m4(0.0f, vlmax);
+    vfloat32m4_t  aq    = __riscv_vfmv_v_f_f32m4(0.0f, vlmax);
+    int i = 0;
+    for (; i + (int) vlmax <= n; i += (int) vlmax) {
+        const vfloat32m4_t vr = __riscv_vle32_v_f32m4(row + i, vlmax);
+        const vfloat32m4_t vk = __riscv_vle32_v_f32m4(k + i, vlmax);
+        const vfloat32m4_t vq = __riscv_vle32_v_f32m4(q + i, vlmax);
+        ak = __riscv_vfmacc_vv_f32m4(ak, vr, vk, vlmax);
+        aq = __riscv_vfmacc_vv_f32m4(aq, vr, vq, vlmax);
+    }
+    if (i < n) {
+        const size_t vl = __riscv_vsetvl_e32m4(n - i);
+        const vfloat32m4_t vr = __riscv_vle32_v_f32m4(row + i, vl);
+        const vfloat32m4_t vk = __riscv_vle32_v_f32m4(k + i, vl);
+        const vfloat32m4_t vq = __riscv_vle32_v_f32m4(q + i, vl);
+        ak = __riscv_vfmacc_vv_f32m4(ak, vr, vk, vl);
+        aq = __riscv_vfmacc_vv_f32m4(aq, vr, vq, vl);
+    }
+    const vfloat32m1_t z = __riscv_vfmv_v_f_f32m1(0.0f, 1);
+    *sk = __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m4_f32m1(ak, z, vlmax));
+    *sq = __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m4_f32m1(aq, z, vlmax));
+}
 #else
 static inline void spx_gdn_mul_f32(int n, float * d, const float * a, const float * b) {
     ggml_vec_mul_f32(n, d, a, b);
@@ -11116,6 +12145,11 @@ static inline float spx_gdn_dot_f32(int n, const float * a, const float * b) {
     float s = 0.0f;
     ggml_vec_dot_f32(n, &s, 0, a, 0, b, 0, 1);
     return s;
+}
+static inline void spx_gdn_dot2_f32(int n, const float * row, const float * k, const float * q,
+                                    float * sk, float * sq) {
+    *sk = spx_gdn_dot_f32(n, row, k);
+    *sq = spx_gdn_dot_f32(n, row, q);
 }
 #endif
 
@@ -11165,11 +12199,15 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
     // per-seq stride in floats (seq s starts at state + s * seq_stride)
     const int64_t state_seq_stride = src_state->nb[3] / sizeof(float);
 
-    const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0);
+    // per-thread scratch: delta | sum_k | sum_q | (state_work when K > 1). The stride MUST match
+    // the ggml-cpu.c work_size estimate, or neighbouring threads silently overlap.
+    const int64_t per_thread = 3 * S_v + (K > 1 ? S_v * S_v : 0);
     const int ith = params->ith;
 
     float * delta       = (float *)params->wdata + ith * per_thread + CACHE_LINE_SIZE_F32;
-    float * state_work  = K > 1 ? (delta + S_v) : nullptr;
+    float * sum_k       = delta  + S_v;
+    float * sum_q       = sum_k  + S_v;
+    float * state_work  = K > 1 ? (sum_q + S_v) : nullptr;
 
     // output layout: [attn_scores | new_states]
     // attn_scores: S_v * H * n_tokens * n_seqs    floats
@@ -11243,21 +12281,29 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
                 spx_gdn_scale_f32((int) (S_v * S_v), s_out, expf(g_d[0]));
             }
 
-            // delta[j] = sum_i S[i][j] * k[i] = dot(row j of M, k)
+            // sum_k[j] = <row j, k> and sum_q[j] = <row j, q> in one pass over the (decayed) state
             for (int64_t j = 0; j < S_v; ++j) {
-                const float sum = spx_gdn_dot_f32((int) S_v, &s_out[j * S_v], k_d);
-                delta[j] = (v_d[j] - sum) * beta_val;
+                spx_gdn_dot2_f32((int) S_v, &s_out[j * S_v], k_d, q_d, &sum_k[j], &sum_q[j]);
             }
 
-            // outer product: S[i][j] += k[i] * delta[j] => M[j][i] += delta[j] * k[i]
+            // C = k . q is the same for every output column
+            const float C = spx_gdn_dot_f32((int) S_v, k_d, q_d);
+
+            // delta[j] = sum_i S[i][j] * k[i]  (the rank-1 coefficient)
+            for (int64_t j = 0; j < S_v; ++j) {
+                delta[j] = (v_d[j] - sum_k[j]) * beta_val;
+            }
+
+            // Output projection from the PRE-update state, via the algebraic identity
+            //     out = (S_old + k (x) delta)^T q = S_old^T q + delta * (k.q)
+            // so the projection does not depend on the rank-1 update below (it can overlap it).
+            for (int64_t j = 0; j < S_v; ++j) {
+                attn_data[j] = (sum_q[j] + delta[j] * C) * scale;
+            }
+
+            // outer product LAST: S[i][j] += k[i] * delta[j] => M[j][i] += delta[j] * k[i]
             for (int64_t j = 0; j < S_v; ++j) {
                 spx_gdn_mad_f32((int) S_v, &s_out[j * S_v], k_d, delta[j]);
-            }
-
-            // attn_out[j] = sum_i S[i][j] * q[i] = dot(row j of M, q)
-            for (int64_t j = 0; j < S_v; ++j) {
-                const float sum = spx_gdn_dot_f32((int) S_v, &s_out[j * S_v], q_d);
-                attn_data[j] = sum * scale;
             }
 
             attn_data += S_v * H; // advance to next token

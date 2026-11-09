@@ -349,7 +349,7 @@ llama_model_kimi_linear::graph::graph(const llama_model & model, const llm_graph
             Kcur = build_gdn_l2_norm(ctx0, Kcur, eps_norm);
 
             // Choose between build_delta_net_chunking and build_delta_net_recurrent based on n_tokens
-            auto attn_out = build_delta_net(Qcur, Kcur, Vcur, g1, beta, state, nullptr, il);
+            auto attn_out = build_delta_net(Qcur, Kcur, Vcur, g1, beta, state, nullptr, nullptr, il);
 
             ggml_tensor * output = ggml_cont(ctx0, attn_out.first);
             ggml_tensor * new_state = attn_out.second;

@@ -2632,6 +2632,8 @@ ggml_tensor * llm_graph_context::build_attn_mha(
         cur = ggml_flash_attn_ext(ctx0, q, k, v, kq_mask, kq_scale, hparams.f_max_alibi_bias,
                                   hparams.attn_soft_cap ? hparams.f_attn_logit_softcapping : 0.0f);
         res->add_fused_node({LLM_FUSED_OP_FLASH_ATTN, cur, il});
+        // the caller names the reshape below, not this op, so name the op here to keep it per-layer
+        cb(cur, "flash_attn", il);
 
         ggml_flash_attn_ext_add_sinks(cur, sinks);
         GGML_ASSERT(n_kv_max >= 0 && n_kv_max <= INT32_MAX);

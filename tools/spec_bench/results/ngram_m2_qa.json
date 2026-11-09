@@ -1,0 +1,14 @@
+{
+ "tag": "ngram_m2_qa",
+ "model": "ssm_all_k128.gguf",
+ "spec": "--spec-type ngram-simple --spec-ngram-simple-size-n 3 --spec-ngram-simple-size-m 2",
+ "prompts": "qa",
+ "max_tokens": 128,
+ "out_tps": 4.72,
+ "ttft_ms": 1291.8,
+ "tpot_ms": 203.2,
+ "acceptance": null,
+ "mean_len": null,
+ "degenerate": false,
+ "evalscope_rc": 0
+}

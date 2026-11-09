@@ -84,6 +84,16 @@ struct block_q4_0_k64x16 {
     uint8_t   qs[512];
 };
 static_assert(sizeof(block_q4_0_k64x16) == 16 * sizeof(ggml_half) + 512, "wrong q4_0_k64x16 size/padding");
+
+// [Q4_0_K128] IME1 repacked block: 16 interleaved rows x 128 weights.
+//   32 B    : one fp16 scale per row (the 128-wide block scale)
+//   1024 B  : 8 chunks of 128 B; chunk c holds K[16c..16c+15] for all 16 rows;
+//             row i byte j: low = code(16c + j), high = code(16c + j + 8)
+struct block_q4_0_k128x16 {
+    ggml_half d[16];
+    uint8_t   qs[1024];
+};
+static_assert(sizeof(block_q4_0_k128x16) == 16 * sizeof(ggml_half) + 1024, "wrong q4_0_k128x16 size/padding");
 using block_q4_1x32 = block_with_zp<4, 32>;
 using block_q8_0x32 = block<8, 32>;
 
@@ -146,6 +156,31 @@ static block_q4_0_k64x16 make_block_q4_0_k64x16(block_q4_0_k64 * in, unsigned in
             o[2*128 + j] = (qs[j + 16] & 0x0F) | ((qs[j + 24] & 0x0F) << 4);
             // chunk 3: elems 48+j    and 56+j
             o[3*128 + j] = (qs[j + 16] >>   4) | ((qs[j + 24] >>   4) << 4);
+        }
+    }
+
+    return out;
+}
+
+// [Q4_0_K128] on-disk 32-wide quarters -> IME1 8-chunk B layout.
+static block_q4_0_k128x16 make_block_q4_0_k128x16(block_q4_0_k128 * in, unsigned int blck_size_interleave) {
+    block_q4_0_k128x16 out;
+    GGML_ASSERT(QK4_0_K128 / blck_size_interleave == 8);
+
+    for (int i = 0; i < 16; i++) {
+        out.d[i] = in[i].d;
+    }
+
+    for (int i = 0; i < 16; i++) {
+        const uint8_t * qs = in[i].qs;
+        uint8_t *       o  = out.qs + i * 8;
+        for (int j = 0; j < 8; j++) {
+            for (int c = 0; c < 4; c++) {
+                // chunk 2c  : elems 32c + j    and 32c + j + 8  (low nibbles)
+                // chunk 2c+1: elems 32c + 16+j and 32c + 24+j   (high nibbles)
+                o[(2*c + 0)*128 + j] = (qs[c*16 + j] & 0x0F) | ((qs[c*16 + j + 8] & 0x0F) << 4);
+                o[(2*c + 1)*128 + j] = (qs[c*16 + j] >>   4) | ((qs[c*16 + j + 8] >>   4) << 4);
+            }
         }
     }
 
@@ -249,6 +284,42 @@ static int repack_q4_0_k64_to_q4_0_k64_16_bl(ggml_tensor *              t,
                 dst_tmp[i] = src[x + i * nblocks];
             }
             *dst++ = make_block_q4_0_k64x16(dst_tmp, interleave_block);
+        }
+        src += nrows_interleaved * nblocks;
+    }
+    return 0;
+
+    GGML_UNUSED(data_size);
+}
+
+// [Q4_0_K128]
+static int repack_q4_0_k128_to_q4_0_k128_16_bl(ggml_tensor *              t,
+                                              int                        interleave_block,
+                                              const void * GGML_RESTRICT data,
+                                              size_t                     data_size) {
+    GGML_ASSERT(t->type == GGML_TYPE_Q4_0_K128);
+    GGML_ASSERT(interleave_block == 16);
+
+    constexpr int nrows_interleaved = 16;
+
+    block_q4_0_k128x16 *    dst = (block_q4_0_k128x16 *) t->data;
+    const block_q4_0_k128 * src = (const block_q4_0_k128 *) data;
+    block_q4_0_k128         dst_tmp[16];
+    int                     nrow    = ggml_nrows(t);
+    int                     nblocks = t->ne[0] / QK4_0_K128;
+
+    GGML_ASSERT(data_size == size_t(nrow) * nblocks * sizeof(block_q4_0_k128));
+
+    if (t->ne[1] % nrows_interleaved != 0 || t->ne[0] % QK4_0_K128 != 0) {
+        return -1;
+    }
+
+    for (int b = 0; b < nrow; b += nrows_interleaved) {
+        for (int64_t x = 0; x < nblocks; x++) {
+            for (int i = 0; i < nrows_interleaved; i++) {
+                dst_tmp[i] = src[x + i * nblocks];
+            }
+            *dst++ = make_block_q4_0_k128x16(dst_tmp, interleave_block);
         }
         src += nrows_interleaved * nblocks;
     }
@@ -1830,6 +1901,10 @@ template <> int repack<block_q4_0, 32, 16>(ggml_tensor * t, const void * data, s
 
 template <> int repack<block_q4_0_k64, 64, 16>(ggml_tensor * t, const void * data, size_t data_size) {
     return repack_q4_0_k64_to_q4_0_k64_16_bl(t, 16, data, data_size);
+}
+
+template <> int repack<block_q4_0_k128, 128, 16>(ggml_tensor * t, const void * data, size_t data_size) {
+    return repack_q4_0_k128_to_q4_0_k128_16_bl(t, 16, data, data_size);
 }
 
 template <> int repack<block_q4_1, 32, 16>(ggml_tensor * t, const void * data, size_t data_size) {

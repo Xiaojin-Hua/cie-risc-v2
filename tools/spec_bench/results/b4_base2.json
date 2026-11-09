@@ -1,0 +1,14 @@
+{
+ "tag": "b4_base2",
+ "model": "Qwen3.5-4B-k128-v2.gguf",
+ "spec": "none",
+ "prompts": "qa",
+ "max_tokens": 128,
+ "out_tps": 2.29,
+ "ttft_ms": 2600.2,
+ "tpot_ms": 400.9,
+ "acceptance": null,
+ "mean_len": null,
+ "degenerate": false,
+ "evalscope_rc": 0
+}

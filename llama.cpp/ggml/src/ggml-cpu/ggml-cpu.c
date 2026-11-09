@@ -243,6 +243,12 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .vec_dot_type             = GGML_TYPE_Q8_0,
         .nrows                    = 1,
     },
+    [GGML_TYPE_Q4_0_K128] = {
+        .from_float               = quantize_row_q4_0_k128,
+        .vec_dot                  = ggml_vec_dot_q4_0_k128_q8_0,
+        .vec_dot_type             = GGML_TYPE_Q8_0,
+        .nrows                    = 1,
+    },
     [GGML_TYPE_Q4_0] = {
         .from_float               = quantize_row_q4_0,
         .vec_dot                  = ggml_vec_dot_q4_0_q8_0,
@@ -623,6 +629,13 @@ void ggml_threadpool_chunk_set(struct ggml_threadpool * tp, int value) {
 
 int ggml_threadpool_chunk_add(struct ggml_threadpool * tp, int value) {
     return atomic_fetch_add_explicit(&tp->current_chunk, value, memory_order_relaxed);
+}
+
+// [A-traffic] per-graph id visible to the spacemit tensor traits (see ime.cpp).  n_graph is
+// `(graph_counter << GGML_THREADPOOL_N_THREADS_BITS) | n_threads`, so the high bits count
+// graphs.  It is stored before the workers are woken, so all threads read the same value.
+int ggml_threadpool_graph_id(struct ggml_threadpool * tp) {
+    return atomic_load_explicit(&tp->n_graph, memory_order_relaxed) >> GGML_THREADPOOL_N_THREADS_BITS;
 }
 
 #if defined(__gnu_linux__)
@@ -3000,10 +3013,14 @@ struct ggml_cplan ggml_graph_plan(
                         const int64_t neq2 = node->src[0]->ne[2]; // number of query heads
                         const int64_t DK = node->src[1]->ne[0];
                         const int64_t DV = node->src[2]->ne[0];
+                        const int64_t nek1 = node->src[1]->ne[1];
 
                         // Tiled flash attention scratch (tile sizes defined in common.h)
-                        // Per-thread: Q_q + KQ + mask + VKQ32 + V32 + K_f32 + padding
-                        size_t prefill  = sizeof(float)*(GGML_FA_TILE_Q*DK + 2*GGML_FA_TILE_Q*GGML_FA_TILE_KV + GGML_FA_TILE_Q*DV + GGML_FA_TILE_KV*DV + GGML_FA_TILE_KV*DK)*n_tasks;
+                        // Per-thread: Q_q + KQ + mask + VKQ32 + (hoisted) V + K
+                        // + FlashPrefill pooled keys / per-block scores / selected indices.
+                        const int64_t kv_alloc = ((nek1 + GGML_FA_TILE_KV - 1)/GGML_FA_TILE_KV)*GGML_FA_TILE_KV;
+                        const int64_t n_blocks = kv_alloc / GGML_FA_TILE_KV;
+                        size_t prefill  = sizeof(float)*(GGML_FA_TILE_Q*DK + 2*GGML_FA_TILE_Q*GGML_FA_TILE_KV + GGML_FA_TILE_Q*DV + kv_alloc*DV + kv_alloc*DK + n_blocks*DK + 3*n_blocks + CACHE_LINE_SIZE_F32)*n_tasks;
 
                         // Decode path: n_kv_chunks = n_tasks (one chunk per thread)
                         // Per-thread: VKQ accmulator (DV), partial M, partial S + intra-thread scratch for V, Q and VKQ
@@ -3037,7 +3054,8 @@ struct ggml_cplan ggml_graph_plan(
                     {
                         const int64_t S_v = node->src[2]->ne[0];
                         const int64_t K   = ggml_get_op_params_i32(node, 0);
-                        const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0);
+                        // delta | sum_k | sum_q | (state_work when K > 1); must match ops.cpp
+                        const int64_t per_thread = 3 * S_v + (K > 1 ? S_v * S_v : 0);
                         cur = per_thread * sizeof(float) * n_tasks;
                     } break;
                 case GGML_OP_COUNT:
@@ -3159,10 +3177,100 @@ static int64_t             g_spx_op_n [SPX_STAGE_COUNT][GGML_OP_COUNT];
 static struct spx_name_stat g_spx_names[SPX_STAGE_COUNT][SPX_NAME_SLOTS];
 static int                 g_spx_names_cnt[SPX_STAGE_COUNT];
 
+// --- trace mode >= 2: per-node CSV + identical read/write census (thread 0 only) ---
+static int                 g_spx_graphs_left = -1;   // prefill graphs still to dump
+static int                 g_spx_dumping     = 0;    // currently inside a dumped graph
+static int64_t             g_spx_node_idx    = 0;
+
+static int ggml_spx_trace_graphs(void) {
+    if (g_spx_graphs_left < 0) {
+        const char * s = getenv("GGML_SPACEMIT_OP_TRACE_GRAPHS");
+        g_spx_graphs_left = (s != NULL) ? atoi(s) : 1;
+        if (g_spx_graphs_left < 0) {
+            g_spx_graphs_left = 0;
+        }
+    }
+    return g_spx_graphs_left;
+}
+
+static const char * ggml_spx_type_name(enum ggml_type t) {
+    if ((int) t < 0 || (int) t >= (int) GGML_TYPE_COUNT) {
+        return "?";
+    }
+    const char * n = ggml_type_name(t);
+    return n != NULL ? n : "?";
+}
+
+// copy a tensor name out of its char[GGML_MAX_NAME] field without ever reading past
+// the field (a bare %s on a non-terminated name walked off the end and faulted)
+static void ggml_spx_name(char * out, const struct ggml_tensor * t) {
+    if (t == NULL) {
+        out[0] = '-';
+        out[1] = ' ';
+        return;
+    }
+    memcpy(out, t->name, GGML_MAX_NAME);
+    out[GGML_MAX_NAME] = ' ';
+}
+
+// one line per executed node: op, shape, type, wall time
+static void ggml_spx_node_dump(int stage, int nth, const struct ggml_tensor * node, int64_t us) {
+    if (!g_spx_dumping) {
+        return;
+    }
+    char nm_dst[GGML_MAX_NAME + 1], nm0[GGML_MAX_NAME + 1], nm1[GGML_MAX_NAME + 1];
+    ggml_spx_name(nm_dst, node);
+    ggml_spx_name(nm0, node->src[0]);
+    ggml_spx_name(nm1, node->src[1]);
+    fprintf(stderr,
+            "[spxnode] stage=%d idx=%4d op=%-18s nth=%d us=%9ld ne=[%lld,%lld,%lld,%lld] "
+            "dst=%s/%s src0=%s/%s src1=%s/%s name=%s\n",
+            stage, (int) g_spx_node_idx++, ggml_op_name(node->op), nth, (long) us,
+            (long long) node->ne[0], (long long) node->ne[1], (long long) node->ne[2], (long long) node->ne[3],
+            nm_dst, ggml_spx_type_name(node->type),
+            nm0, node->src[0] ? ggml_spx_type_name(node->src[0]->type) : "-",
+            nm1, node->src[1] ? ggml_spx_type_name(node->src[1]->type) : "-", nm_dst);
+}
+
+// one line per executed node listing every tensor it reads and the one it writes
+static void ggml_spx_io_dump(const struct ggml_tensor * node) {
+    if (!g_spx_dumping) {
+        return;
+    }
+    char nm[GGML_MAX_NAME + 1];
+    ggml_spx_name(nm, node);
+    fprintf(stderr, "[spxio] idx=%4d op=%-18s dst=%s type=%s bytes=%zu ne=[%lld,%lld,%lld,%lld]\n",
+            (int) (g_spx_node_idx - 1), ggml_op_name(node->op), nm,
+            ggml_spx_type_name(node->type), ggml_nbytes(node),
+            (long long) node->ne[0], (long long) node->ne[1], (long long) node->ne[2], (long long) node->ne[3]);
+    for (int i = 0; i < GGML_MAX_SRC; i++) {
+        const struct ggml_tensor * s = node->src[i];
+        if (s == NULL) {
+            continue;
+        }
+        char nms[GGML_MAX_NAME + 1];
+        ggml_spx_name(nms, s);
+        fprintf(stderr,
+                "[spxio]   src%d=%-28s type=%-8s bytes=%zu ne=[%lld,%lld,%lld,%lld] op=%s view=%d\n",
+                i, nms, ggml_spx_type_name(s->type), ggml_nbytes(s),
+                (long long) s->ne[0], (long long) s->ne[1], (long long) s->ne[2], (long long) s->ne[3],
+                ggml_op_name(s->op), (int) (s->view_src != NULL));
+    }
+}
+
+// mode >= 2: time thread 0 spends waiting in the per-node barrier (= load imbalance)
+static int64_t             g_spx_bar_us[SPX_STAGE_COUNT][GGML_OP_COUNT];
+static int64_t             g_spx_bar_n [SPX_STAGE_COUNT][GGML_OP_COUNT];
+static int                 g_spx_mode_global = 0;
+
 static int ggml_spx_op_stats_enabled(void) {
     if (g_spx_op_stats < 0) {
         const char * s = getenv("GGML_SPACEMIT_OP_STATS");
-        g_spx_op_stats = (s != NULL && s[0] == '1') ? 1 : 0;
+        g_spx_op_stats = (s != NULL) ? atoi(s) : 0;   // 0=off 1=legacy 2=wall 3=wall+io
+        g_spx_mode_global = g_spx_op_stats;
+        if (g_spx_op_stats < 0) {
+            g_spx_op_stats = 0;
+        }
         if (g_spx_op_stats) {
             atexit(ggml_spx_op_stats_dump);
         }
@@ -3219,7 +3327,7 @@ static void ggml_spx_op_stats_dump(void) {
             }
         }
         fprintf(stderr, "[spxop] ===== stage %s : total %ld us =====\n", stages[s], (long) total);
-        for (int a = 0; a < cnt && a < 15; a++) {
+        for (int a = 0; a < cnt && a < 40; a++) {
             int o = idx[a];
             fprintf(stderr, "[spxop] type %-18s total %10ld us  n %6ld  avg %8ld us  %5.1f%%\n",
                     ggml_op_name((enum ggml_op) o), (long) g_spx_op_us[s][o], (long) g_spx_op_n[s][o],
@@ -3239,8 +3347,23 @@ static void ggml_spx_op_stats_dump(void) {
                 }
             }
         }
+        if (g_spx_mode_global >= 2) {
+            int64_t bar_total = 0;
+            for (int o = 0; o < GGML_OP_COUNT; o++) {
+                bar_total += g_spx_bar_us[s][o];
+            }
+            fprintf(stderr, "[spxop] ===== stage %s : barrier/imbalance total %ld us =====\n",
+                    stages[s], (long) bar_total);
+            for (int o = 0; o < GGML_OP_COUNT; o++) {
+                if (g_spx_bar_us[s][o] > 0) {
+                    fprintf(stderr, "[spxbar] type %-18s total %10ld us  n %6ld  avg %8ld us\n",
+                            ggml_op_name((enum ggml_op) o), (long) g_spx_bar_us[s][o], (long) g_spx_bar_n[s][o],
+                            (long) (g_spx_bar_us[s][o] / (g_spx_bar_n[s][o] > 0 ? g_spx_bar_n[s][o] : 1)));
+                }
+            }
+        }
         fprintf(stderr, "[spxop]   -- top nodes --\n");
-        for (int a = 0; a < ncnt && a < 25; a++) {
+        for (int a = 0; a < ncnt && a < SPX_NAME_SLOTS; a++) {
             struct spx_name_stat * e = &g_spx_names[s][nidx[a]];
             fprintf(stderr, "[spxop] name %-28s %-16s total %10ld us  n %6ld  avg %8ld us\n",
                     e->name, ggml_op_name((enum ggml_op) e->op), (long) e->us, (long) e->n,
@@ -3269,6 +3392,14 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
             }
         }
         spx_graph_stage = (n1 * 2 > cgraph->n_nodes) ? SPX_STAGE_DECODE : SPX_STAGE_PREFILL;
+        if (spx_stats >= 2 && spx_graph_stage == SPX_STAGE_PREFILL && ggml_spx_trace_graphs() > 0) {
+            g_spx_dumping = 1;
+            fprintf(stderr, "[spxgraph] prefill graph start: n_nodes=%d graphs_left=%d\n",
+                    cgraph->n_nodes, ggml_spx_trace_graphs());
+            g_spx_graphs_left--;
+        } else {
+            g_spx_dumping = 0;
+        }
     }
 
 #ifdef GGML_USE_CPU_RISCV64_SPACEMIT
@@ -3316,7 +3447,7 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
             ggml_compute_forward(&params, node);
         }
 
-        if (spx_stats && state->ith == 0) {
+        if (spx_stats == 1 && state->ith == 0) {
             ggml_spx_op_stats_record(spx_stage, node->op, node->name, ggml_time_us() - spx_t0);
         }
 
@@ -3326,8 +3457,24 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
             tp->ec    = GGML_STATUS_ABORTED;
         }
 
+        const int64_t spx_tb0 = (spx_stats >= 2) ? ggml_time_us() : 0;
+
         if (node_n + 1 < cgraph->n_nodes) {
             ggml_barrier(state->threadpool);
+        }
+
+        // mode >= 2: wall-inclusive per-node sample (thread 0), plus the I/O census
+        if (spx_stats >= 2 && state->ith == 0) {
+            const int64_t spx_t1 = ggml_time_us();
+            g_spx_bar_us[spx_graph_stage][node->op] += spx_t1 - spx_tb0;
+            g_spx_bar_n [spx_graph_stage][node->op] += 1;
+            ggml_spx_op_stats_record(spx_stage, node->op, node->name, spx_t1 - spx_t0);
+            if (g_spx_dumping) {
+                ggml_spx_node_dump(spx_stage, params.nth, node, spx_t1 - spx_t0);
+                if (spx_stats >= 3) {
+                    ggml_spx_io_dump(node);
+                }
+            }
         }
     }
 

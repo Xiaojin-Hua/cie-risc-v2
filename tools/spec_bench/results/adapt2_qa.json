@@ -1,0 +1,14 @@
+{
+ "tag": "adapt2_qa",
+ "model": "ssm_all_k128.gguf",
+ "spec": "--spec-type ngram-simple --spec-ngram-simple-size-n 3 --spec-ngram-simple-size-m 3",
+ "prompts": "qa",
+ "max_tokens": 128,
+ "out_tps": 4.95,
+ "ttft_ms": 1014.8,
+ "tpot_ms": 195.8,
+ "acceptance": 0.3871,
+ "mean_len": 2.09,
+ "degenerate": false,
+ "evalscope_rc": 0
+}

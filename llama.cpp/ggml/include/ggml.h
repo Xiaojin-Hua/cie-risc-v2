@@ -431,7 +431,8 @@ extern "C" {
         GGML_TYPE_Q1_0    = 41,
         GGML_TYPE_Q2_0    = 42,
         GGML_TYPE_Q4_0_K64 = 43, // [Q4_0_K64] Q4_0 with 64-element blocks
-        GGML_TYPE_COUNT   = 44,
+        GGML_TYPE_Q4_0_K128 = 44, // [Q4_0_K128] Q4_0 with 128-element blocks (half the scales)
+        GGML_TYPE_COUNT   = 45,
     };
 
     // [TAG_GGML_PREC]
@@ -2533,12 +2534,15 @@ extern "C" {
     // src[1]=qkv [n_t,d_inner,n_seqs], src[2]=weight [d_conv,d_inner].
     // src[3]=dst_state (optional) [row_count,d_inner... n_seqs]: when non-null, the kernel writes
     // the new conv state (last d_conv-1 taps of [state ++ qkv]) here directly (no CPY).
+    // apply_silu: fuse the activation into the conv kernel (op_params[0]); the caller must then NOT
+    // add its own ggml_silu node.
     GGML_API struct ggml_tensor * ggml_ssm_conv_state(
             struct ggml_context * ctx,
             struct ggml_tensor  * state,
             struct ggml_tensor  * qkv,
             struct ggml_tensor  * c,
-            struct ggml_tensor  * dst_state);
+            struct ggml_tensor  * dst_state,
+            bool                  apply_silu);
 
     GGML_API struct ggml_tensor * ggml_ssm_scan(
             struct ggml_context * ctx,
@@ -2659,8 +2663,6 @@ extern "C" {
     //   g     : [1, H_v, n_tokens, n_seqs] (scalar gate) or [S_v, H_v, n_tokens, n_seqs] (KDA)
     //   beta  : [1, H_v, n_tokens, n_seqs]
     //   state : [S_v, S_v, H_v, n_seqs] -- initial recurrent state s0
-    //   dst_state : optional [n_embd_s, n_seqs] recurrent-cache view; when non-null and K == 1 the
-    //               final state is written here in-place (skipping the caller's CPY back to cache)
     //
     // the output packs the attention scores [S_v, H_v, n_tokens, n_seqs] followed by K state
     // snapshots, most-recent first (slot 0 = final state, slot s = state s tokens back). K == 1
@@ -2674,6 +2676,7 @@ extern "C" {
             struct ggml_tensor  * beta,
             struct ggml_tensor  * state,
             struct ggml_tensor  * dst_state,
+            struct ggml_tensor  * log,
             int64_t               K);
 
     // DSA lightning indexer

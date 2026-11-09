@@ -13,6 +13,9 @@
 #include <map>
 #include <stdexcept>
 
+// max DeltaLog entries per head; must match GDN_LOG_MAXL in the spacemit GDN kernel
+#define GDN_LOG_MAXL 8
+
 //
 // llama_memory_recurrent
 //
@@ -51,8 +54,9 @@ llama_memory_recurrent::llama_memory_recurrent(
         auto it = ctx_map.find(buft);
         if (it == ctx_map.end()) {
             ggml_init_params params = {
-                // r and s per layer, plus the separate PLE conv row where the model has one
-                /*.mem_size   =*/ size_t((hparams.ple_conv_state() > 0 ? 3u : 2u)*n_layer*ggml_tensor_overhead()),
+                // r and s per layer, plus the separate PLE conv row where the model has one, plus the
+                // DeltaLog buffer where the model uses it
+                /*.mem_size   =*/ size_t((hparams.ple_conv_state() > 0 ? 3u : 2u) + (s_log_floats > 0 ? 1u : 0u))*n_layer*ggml_tensor_overhead(),
                 /*.mem_buffer =*/ NULL,
                 /*.no_alloc   =*/ true,
             };
@@ -73,6 +77,20 @@ llama_memory_recurrent::llama_memory_recurrent(
     r_l.resize(n_layer);
     s_l.resize(n_layer);
     p_l.resize(n_layer);
+    s_log_l.resize(n_layer);
+
+    // DeltaLog region for the GDN decode path, per head:
+    //   [lbar, L, q8_valid, Lam[maxl], a[maxl][S_v], b[maxl][S_v], Q8 base bytes]
+    // must match gdn_log_head_stride() in spacemit/rvv_kernels.cpp
+    {
+        const int64_t S_v = hparams.ssm_d_state;
+        const int64_t H   = hparams.ssm_dt_rank;
+        const bool    gdn = (model.arch == LLM_ARCH_QWEN35 || model.arch == LLM_ARCH_QWEN35MOE ||
+                             model.arch == LLM_ARCH_QWEN3NEXT);
+        const int64_t q8_off    = (((3 + GDN_LOG_MAXL + 2 * GDN_LOG_MAXL * S_v) + 15) / 16) * 16;
+        const int64_t q8_floats = (((S_v * S_v * 2) / 4 + 15) / 16) * 16;
+        s_log_floats = (gdn && S_v > 0 && H > 0) ? H * (q8_off + q8_floats) : 0;
+    }
 
     for (int i = 0; i < n_layer; i++) {
         if (filter && !filter(i)) {
@@ -111,6 +129,13 @@ llama_memory_recurrent::llama_memory_recurrent(
             ggml_tensor * p = ggml_new_tensor_2d(ctx, type_r, hparams.ple_conv_state(), n_rows);
             ggml_format_name(p, "cache_ple_r_l%d", i);
             p_l[i] = p;
+        }
+
+        // DeltaLog for GDN decode: carried in the recurrent cache so it is saved/restored with the state
+        if (s_log_floats > 0) {
+            ggml_tensor * slog = ggml_new_tensor_2d(ctx, type_s, s_log_floats, n_rows);
+            ggml_format_name(slog, "cache_slog_l%d", i);
+            s_log_l[i] = slog;
         }
     }
 
@@ -987,6 +1012,24 @@ void llama_memory_recurrent::state_write_data(llama_io_write_i & io, const std::
             }
         }
     }
+
+    // DeltaLog buffer (separate row-major tensor): written so the pending log survives a state save
+    if (!s_trans && !s_log_l.empty()) {
+        for (uint32_t il = 0; il < n_layer; ++il) {
+            if (s_log_l[il] == nullptr) continue;
+
+            const int32_t t = (int32_t) s_log_l[il]->type;
+            io.write(&t, sizeof(t));
+
+            const uint64_t s_log_row = s_log_l[il]->nb[1];
+            io.write(&s_log_row, sizeof(s_log_row));
+
+            for (const auto & range : cell_ranges) {
+                const size_t range_size = range.second - range.first;
+                io.write_tensor(s_log_l[il], range.first * s_log_row, range_size * s_log_row);
+            }
+        }
+    }
 }
 
 bool llama_memory_recurrent::state_read_meta(llama_io_read_i & io, uint32_t cell_count, llama_seq_id dest_seq_id) {
@@ -1220,6 +1263,33 @@ bool llama_memory_recurrent::state_read_data(llama_io_read_i & io, uint32_t cell
         }
     }
 
+    // DeltaLog buffer, mirroring the save path
+    if (!s_trans && !s_log_l.empty()) {
+        for (uint32_t il = 0; il < n_layer; ++il) {
+            if (s_log_l[il] == nullptr) continue;
+
+            int32_t t_ref;
+            io.read(&t_ref, sizeof(t_ref));
+            const int32_t t = (int32_t) s_log_l[il]->type;
+            if (t != t_ref) {
+                LLAMA_LOG_ERROR("%s: mismatched s_log type (%d != %d, layer %d)\n", __func__, t, t_ref, il);
+                return false;
+            }
+
+            uint64_t s_log_row_ref;
+            io.read(&s_log_row_ref, sizeof(s_log_row_ref));
+            const uint64_t s_log_row = s_log_l[il]->nb[1];
+            if (s_log_row != s_log_row_ref) {
+                LLAMA_LOG_ERROR("%s: mismatched s_log row size (%zu != %zu, layer %d)\n", __func__, (size_t) s_log_row, (size_t) s_log_row_ref, il);
+                return false;
+            }
+
+            if (cell_count) {
+                io.read_tensor(s_log_l[il], head * s_log_row, cell_count * s_log_row);
+            }
+        }
+    }
+
     return true;
 }
 
@@ -1297,6 +1367,10 @@ ggml_tensor * llama_memory_recurrent_context::get_r_l(int32_t il) const {
 
 ggml_tensor * llama_memory_recurrent_context::get_s_l(int32_t il) const {
     return mem->s_l[il];
+}
+
+ggml_tensor * llama_memory_recurrent_context::get_s_log_l(int32_t il) const {
+    return mem->s_log_l.empty() ? nullptr : mem->s_log_l[il];
 }
 
 ggml_tensor * llama_memory_recurrent_context::get_p_l(int32_t il) const {

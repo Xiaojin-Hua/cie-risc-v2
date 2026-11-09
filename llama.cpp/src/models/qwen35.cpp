@@ -1,8 +1,155 @@
 #include "models.h"
 #include "llama-kv-cache.h"
 #include "llama-memory-recurrent.h"
+#include "models/llama-ced.h"
 
 #include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <utility>
+#include <vector>
+
+// ---------------------------------------------------------------------------
+// Encoder structural pruning (round 2026-10-06).
+//
+// Three independent, env-gated switches.  All of them only ever touch layers
+// strictly below the CED split point; the decoder half must keep every layer
+// or the tail replay has nothing to run.  With none of them set the graph is
+// byte-identical to the unpruned build, which is what keeps the TAIL=512 gate
+// green.
+//
+//   LLAMA_QWEN35_ENC_SKIP="3,7,11"   layer becomes identity
+//                                    (residual stream passes straight through)
+//   LLAMA_QWEN35_ENC_NOFFN="5,9"     token mixer kept, FFN sub-block dropped
+//   LLAMA_QWEN35_ENC_PFFN="0,..."    token mixer on the whole window, FFN only
+//                                    on the trailing ced_tail tokens
+//                                    ("CED for the encoder"; needs CED active)
+// ---------------------------------------------------------------------------
+namespace {
+
+// Encoder-layer pruning is OFF by default.
+//
+// It used to default to {9} ("the shipped best configuration").  That default is
+// wrong: on the 160-question Chinese multiple-choice eval
+// (results/2026-10-17-k1-acc-tail) dropping layer 9 costs 18.1 pp -- 73/160
+// (45.62%) -> 44/160 (27.50%), exact McNemar p=1e-4 -- *by itself*, with CED
+// entirely unloaded.  The CED projection recovers none of it (-1.9 pp, p=0.25
+// NS), and a projection retrained on the pruned model could not either: the
+// ceiling for any prefix-K/V map is the pruned model's own no-pruning score,
+// 27.50%.  Dropping a whole GDN layer is a model edit, not a compression.
+//
+// LLAMA_QWEN35_ENC_SKIP=9 restores the old behaviour; off/none/- are still
+// accepted and now mean the default.
+static const int ENC_SKIP_DEFAULT = -1;
+
+const std::vector<int> & enc_list(const char * name, int default_id) {
+    // reserve so emplace_back never reallocates: callers hold the returned
+    // reference across the range-for that immediately follows.
+    static std::vector<std::pair<std::string, std::vector<int>>> cache;
+    cache.reserve(8);
+    const std::string key = std::string(name) + "#" + std::to_string(default_id);
+    for (const auto & kv : cache) {
+        if (kv.first == key) {
+            return kv.second;
+        }
+    }
+    std::vector<int> out;
+    const char * e = std::getenv(name);
+    if (e != nullptr && e[0] != '\0' &&
+        (std::strcmp(e, "off") == 0 || std::strcmp(e, "none") == 0 || std::strcmp(e, "-") == 0)) {
+        std::fprintf(stderr, "ENC_PRUNE: %s=%s -> disabled\n", name, e);
+    } else if (e != nullptr && e[0] != '\0') {
+        const char * p = e;
+        while (*p != '\0') {
+            char * end = nullptr;
+            const long id = std::strtol(p, &end, 10);
+            if (end == p) {
+                break;
+            }
+            if (id >= 0 && id < 4096) {
+                out.push_back((int) id);
+            }
+            p = end;
+            while (*p == ',' || *p == ' ' || *p == '\t') {
+                ++p;
+            }
+        }
+        std::fprintf(stderr, "ENC_PRUNE: %s='%s' -> %zu layer(s)\n", name, e, out.size());
+    } else if (default_id >= 0) {
+        out.push_back(default_id);
+        std::fprintf(stderr, "ENC_PRUNE: %s unset -> default {%d}\n", name, default_id);
+    }
+    cache.emplace_back(key, std::move(out));
+    return cache.back().second;
+}
+
+bool enc_in(const char * name, int il, int default_id) {
+    for (int x : enc_list(name, default_id)) {
+        if (x == il) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool enc_skip_requested (int il, int def) { return enc_in("LLAMA_QWEN35_ENC_SKIP",  il, def); }
+bool enc_noffn_requested(int il, int def) { return enc_in("LLAMA_QWEN35_ENC_NOFFN", il, def); }
+bool enc_pffn_requested (int il, int def) { return enc_in("LLAMA_QWEN35_ENC_PFFN",  il, def); }
+
+std::string enc_summary(int split, int skip_def) {
+    static const char * names[3] = { "LLAMA_QWEN35_ENC_SKIP",
+                                     "LLAMA_QWEN35_ENC_NOFFN",
+                                     "LLAMA_QWEN35_ENC_PFFN" };
+    static const char * tags[3]  = { "skip", "noffn", "pffn" };
+    std::string out = "ENC_PRUNE applied:";
+    for (int k = 0; k < 3; ++k) {
+        std::string lst;
+        for (int x : enc_list(names[k], k == 0 ? skip_def : -1)) {
+            if (x < split) {
+                if (!lst.empty()) {
+                    lst += ",";
+                }
+                lst += std::to_string(x);
+            }
+        }
+        out += " ";
+        out += tags[k];
+        out += "=[";
+        out += lst;
+        out += "]";
+    }
+    return out;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// CED split point.
+//
+// The runtime has always derived it as n_layer*2/3, which on this 24-layer
+// model is 16 -- so the encoder half is layers 0..15 and h_pref is H_15.  The
+// projection blobs shipped so far were trained with --split-layer 14 (input
+// H_13), which makes their layer-15 entry dead code.  This override lets the
+// trained-for-14 configuration actually be run, so the two can be compared
+// instead of assumed equal.
+// ---------------------------------------------------------------------------
+static int ced_split_of(int n_layer) {
+    int s = n_layer * 2 / 3;
+    if (const char * e = std::getenv("LLAMA_QWEN35_CED_SPLIT")) {
+        const int v = std::atoi(e);
+        if (v > 0 && v < n_layer) {
+            s = v;
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                std::fprintf(stderr, "CED: split overridden to %d (default %d)\n",
+                             v, n_layer * 2 / 3);
+            }
+        }
+    }
+    return s;
+}
 
 void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,       hparams.f_norm_rms_eps);
@@ -133,6 +280,144 @@ std::unique_ptr<llm_graph_context> llama_model_qwen35::build_arch_graph(const ll
     return std::make_unique<graph>(*this, params);
 }
 
+
+// ---------------------------------------------------------------------------
+// CED stage 2: the prefix K/V projection table, loaded once per process.
+// Lazy, so a run without LLAMA_QWEN35_CED never touches the filesystem and
+// behaves exactly like stock llama.cpp.
+// ---------------------------------------------------------------------------
+static const llama_ced_ctx & ced_proj_table(const llama_model * model) {
+    static const llama_ced_ctx ced = [&] {
+        const auto * q35 = static_cast<const llama_model_qwen35 *>(model);
+        const auto & hp  = q35->hparams;
+        return llama_ced_load_from_env(hp.n_layer(), hp.n_embd,
+                                       hp.n_embd_k_gqa(), hp.n_embd_v_gqa());
+    }();
+    return ced;
+}
+
+// ---------------------------------------------------------------------------
+// Tail-Replay helper: run the decoder half on ONE window of `n_win` tokens
+// starting at position i0 of the ubatch, writing that window's K/V into the
+// cache at the corresponding slots. Returns the window's hidden states.
+// ---------------------------------------------------------------------------
+ggml_tensor * llama_model_qwen35::graph::build_ced_decoder(
+        llm_graph_input_attn_kv * inp_attn,
+        llm_graph_input_rs      * inp_recr,
+        ggml_tensor *             inpL,
+        ggml_tensor *             inp_pos,
+        int *                     sections,
+        int                       i0,
+        int                       n_win,
+        ggml_tensor *             h_pref,
+        const llama_ced_ctx &     ced) {
+    const int64_t n_prefix        = i0;
+    const int64_t n_embd_head     = hparams.n_embd_head_v();
+    const int     ced_split_local = ced_split_of(n_layer);
+    ggml_tensor * cur = ggml_view_2d(ctx0, inpL, inpL->ne[0], n_win, inpL->nb[1],
+                                     (size_t) i0 * inpL->nb[1]);
+    ggml_tensor * pos = ggml_view_1d(ctx0, inp_pos,
+                                     (int64_t) n_win * hparams.n_pos_per_embd(),
+                                     (size_t) i0 * inp_pos->nb[0]);
+
+    // ---- CED stage 2: fill the prefix K/V cache slots with the LEARNED
+    // projection of the layer-(split-1) hidden states (h_pref). Without this
+    // those slots hold whatever the decoder half never wrote (zeros on the
+    // first ubatch) -- the +32.8% quality loss stage 1 measured.
+    //
+    // Writing to the cache is enough because build_attn() stores the window's
+    // own K/V and then attends against mctx_cur->get_k()/get_v(), i.e. the
+    // WHOLE cache -- which is precisely why the zeroed prefix mattered at all.
+    // These nodes are created before the window's cpy_k, so the prefix is in
+    // place by the time the attention reads it.
+    //
+    // With tail == n_tokens, n_prefix == 0 and nothing is emitted, which is
+    // what keeps the stage-1 bit-exact gate green.
+    if (ced.active && n_prefix > 0 && h_pref != nullptr) {
+        ggml_tensor * pref_pos = ggml_view_1d(ctx0, inp_pos,
+                (int64_t) n_prefix * hparams.n_pos_per_embd(), 0);
+        const auto * mctx_cur = inp_attn->mctx;
+        ggml_tensor * k_idxs = ggml_view_1d(ctx0, inp_attn->self_k_idxs, n_prefix, 0);
+        const int64_t v_per_token = inp_attn->self_v_idxs->ne[0] / n_tokens;
+        ggml_tensor * v_idxs = ggml_view_1d(ctx0, inp_attn->self_v_idxs,
+                v_per_token * n_prefix, 0);
+        for (int il = ced_split_local; il < n_layer; ++il) {
+            if (hparams.is_recr(il)) {
+                continue;   // linear-attention layers own no KV cache entry
+            }
+            ggml_tensor * kp = nullptr;
+            ggml_tensor * vp = nullptr;
+            if (!llama_ced_project(ced, (uint32_t) il, ctx0, h_pref, &kp, &vp)) {
+                continue;   // uncalibrated layer: keep the stage-1 behaviour
+            }
+            // the projection is a linear map off the layer-15 hidden state, so K
+            // still needs k_norm and RoPE at the PREFIX's absolute positions.
+            //
+            // This norm is NOT redundant even though the training target was the
+            // reference model's k_norm OUTPUT: dropping it measured PPL 23.8138
+            // against 18.9211 with it (2026-10-06 A/B), i.e. the renormalisation
+            // repairs a scale/shape error in the ridge solution rather than
+            // adding one.  LLAMA_QWEN35_CED_SKIP_KNORM=1 is kept for the record.
+            static const bool skip_knorm = std::getenv("LLAMA_QWEN35_CED_SKIP_KNORM") != nullptr;
+            ggml_tensor * k_3d = ggml_cont_3d(ctx0, kp, n_embd_head, n_head_kv, n_prefix);
+            ggml_tensor * v_3d = ggml_cont_3d(ctx0, vp, n_embd_head, n_head_kv, n_prefix);
+            if (!skip_knorm) {
+                k_3d = build_norm(k_3d, model.layers[il].attn_k_norm, nullptr,
+                                  LLM_NORM_RMS, il);
+            }
+            k_3d = ggml_rope_multi(ctx0, k_3d, pref_pos, nullptr,
+                    n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+                    ext_factor, attn_factor, beta_fast, beta_slow);
+            ggml_build_forward_expand(gf, mctx_cur->cpy_k(ctx0, k_3d, k_idxs, il));
+            ggml_build_forward_expand(gf, mctx_cur->cpy_v(ctx0, v_3d, v_idxs, il));
+            cb(k_3d, "ced_prefix_k", il);
+        }
+    }
+
+    for (int il = ced_split_local; il < n_layer; ++il) {
+        ggml_tensor * inpSA = cur;
+
+        cur = build_norm(cur, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, il);
+        cb(cur, "ced_attn_norm", il);
+
+        if (hparams.is_recr(il)) {
+            cur = build_layer_attn_linear(inp_recr, cur, il);
+        } else {
+            auto * attn = inp_attn;
+            ggml_tensor * old_k = attn->self_k_idxs;
+            ggml_tensor * old_v = attn->self_v_idxs;
+            ggml_tensor * old_m = attn->self_kq_mask_cnv;
+
+            const int64_t v_per_tok = old_v->ne[0] / n_tokens;
+            attn->self_k_idxs = ggml_view_1d(ctx0, old_k, n_win,
+                                             (size_t) i0 * old_k->nb[0]);
+            attn->self_v_idxs = ggml_view_1d(ctx0, old_v, v_per_tok * n_win,
+                                             (size_t) i0 * v_per_tok *
+                                             ggml_element_size(old_v));
+            GGML_ASSERT(old_m->ne[3] == 1);
+            attn->self_kq_mask_cnv = ggml_view_4d(ctx0, old_m,
+                    old_m->ne[0], n_win, old_m->ne[2], old_m->ne[3],
+                    old_m->nb[1], old_m->nb[2], old_m->nb[3],
+                    (size_t) i0 * old_m->nb[1]);
+
+            cur = build_layer_attn(attn, cur, pos, sections, il);
+
+            attn->self_k_idxs = old_k;
+            attn->self_v_idxs = old_v;
+            attn->self_kq_mask_cnv = old_m;
+        }
+
+        cur = ggml_add(ctx0, cur, inpSA);
+        ggml_tensor * ffn_residual = cur;
+        ggml_tensor * post_norm = build_norm(cur, model.layers[il].attn_post_norm,
+                                             nullptr, LLM_NORM_RMS, il);
+        cur = build_layer_ffn(post_norm, il);
+        cur = ggml_add(ctx0, cur, ffn_residual);
+        cb(cur, "ced_layer_out", il);
+    }
+    return cur;
+}
+
 llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_params & params) :
     llm_build_delta_net_base(params), model(model) {
     const int64_t n_embd_head = hparams.n_embd_head_v();
@@ -161,8 +446,88 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
                      params.gtype != LLM_GRAPH_TYPE_DECODER_MTP;
     const int pop_skip_begin = n_layer * 2 / 3;
 
+    // ---- Tail-Replay prefill pruning (stage 1: KV-cache mechanics) ----------
+    // encoder half runs on every token; decoder half runs only on the trailing
+    // `ced_tail` tokens. With ced_tail == n_tokens this must reproduce the stock
+    // path bit-for-bit (that is the correctness gate).
+    // CED is driven entirely by LLAMA_QWEN35_CED (the blob path); when it is
+    // unset/off the projection table is inactive and this is the stock path.
+    const bool ced = ced_proj_table(&model).active &&
+                     ubatch.n_seqs == 1 && ubatch.equal_seqs() &&
+                     ubatch.n_seq_tokens == ubatch.n_tokens && ubatch.n_tokens > 1 &&
+                     !pop &&
+                     params.gtype != LLM_GRAPH_TYPE_DECODER_MTP;
+    const int ced_split = ced_split_of(n_layer);
+    // pruning only defaults on while CED is active, so LLAMA_QWEN35_CED=off is
+    // genuinely stock; an explicit ENC_* list still applies either way.
+    const int enc_skip_def = ced ? ENC_SKIP_DEFAULT : -1;
+
+    int ced_tail = n_tokens;
+    if (ced) {
+        ced_tail = LLAMA_CED_DEFAULT_TAIL;
+        if (const char * e = std::getenv("LLAMA_QWEN35_CED_TAIL")) {
+            const int t = atoi(e);
+            ced_tail = t >= 1 ? t : n_tokens;   // 0 / junk => full window
+        }
+        if (ced_tail > n_tokens)   ced_tail = n_tokens;
+    }
+    // ---- CED window vs. downstream scoring range -------------------------
+    // llama-perplexity (tools/perplexity/perplexity.cpp:542) scores from
+    // `first = n_ctx/2` to n_ctx. CED only produces logits for the trailing
+    // `ced_tail` tokens, so any scored position below `n_tokens - ced_tail`
+    // gets a logit that was never computed. Require the window to cover the
+    // whole scoreable range; otherwise fall back to the stock pass.
+    int ced_tail_eff = ced_tail;
+    if (ced) {
+        const int n_scored   = n_tokens - n_tokens / 2;   // == n_ctx - first
+        const bool strict = std::getenv("LLAMA_QWEN35_CED_STRICT_SCORING") != nullptr;
+        if (ced_tail_eff < n_scored) {
+            static bool warned = false;
+            if (!warned) {
+                warned = true;
+                fprintf(stderr,
+                    "CED: window %d < %d positions a scorer may read (n_tokens=%d). "
+                    "Logits before the window are NOT computed, so any perplexity run must "
+                    "pass --ppl-first %d (see tools/perplexity/perplexity.cpp).%s\n",
+                    ced_tail_eff, (int) n_scored, (int) n_tokens, (int) (n_tokens - ced_tail_eff),
+                    strict ? " STRICT: falling back to the full pass." : "");
+            }
+            // Only disable the feature when the operator explicitly asks for it.
+            // Disabling by default silently removed the entire speed benefit.
+            if (strict) {
+                ced_tail_eff = n_tokens;
+            }
+        }
+    }
+    const int ced_npref = ced ? n_tokens - ced_tail_eff : n_tokens;
+
+    // ---- one-time banner so a run's configuration is never in doubt --------
+    {
+        // Only the prefill graph is interesting: llama.cpp builds a 1-token
+        // decode graph first, where ced is inactive by construction.
+        static bool reported = false;
+        if (!reported && n_tokens > 1) {
+            reported = true;
+            const std::string sum = enc_summary(ced_split, enc_skip_def);
+            std::fprintf(stderr,
+                    "ENC_PRUNE: n_layer=%d ced_split=%d n_tokens=%d ced=%d tail=%d n_prefix=%d | %s\n",
+                    n_layer, ced_split, n_tokens, (int) ced, ced_tail_eff, ced_npref,
+                    sum.c_str());
+            std::fprintf(stderr, "ENC_PRUNE: using tail=%d (default %d), encoder skip default %d\n",
+                         ced_tail_eff, LLAMA_CED_DEFAULT_TAIL, enc_skip_def);
+        }
+    }
+
     for (int il = 0; il < n_layer; ++il) {
         res->t_layer_inp[il] = inpL;
+
+        // ---- encoder structural pruning: identity layer -------------------
+        // Skipping an encoder layer leaves the residual stream untouched, so
+        // the graph stays exactly as wide as before; only the compute goes.
+        if (il < ced_split && enc_skip_requested(il, enc_skip_def)) {
+            cb(inpL, "enc_skipped", il);
+            continue;
+        }
 
         const bool pop_attn_layer = pop && il >= pop_skip_begin && !hparams.is_recr(il);
 
@@ -235,6 +600,35 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
             continue;
         }
 
+        // ---- Tail-Replay: at the split point, run the decoder half on the
+        // trailing `ced_tail` tokens only, then re-attach the untouched prefix
+        // so the residual stream keeps its [n_embd, n_tokens] shape.
+        if (ced && il == ced_split) {
+            ggml_tensor * win = ggml_view_2d(ctx0, inpL,
+                    inpL->ne[0], ced_tail_eff, inpL->nb[1],
+                    (size_t) ced_npref * inpL->nb[1]);
+            ggml_tensor * win_pos = ggml_view_1d(ctx0, inp_pos,
+                    (int64_t) ced_tail_eff * hparams.n_pos_per_embd(),
+                    (size_t) ced_npref * inp_pos->nb[0]);
+
+            ced_win = ced_tail_eff;
+            ggml_tensor * h_pref = ced_npref > 0
+                    ? ggml_view_2d(ctx0, inpL, inpL->ne[0], ced_npref, inpL->nb[1], 0)
+                    : nullptr;
+            ggml_tensor * dec = build_ced_decoder(inp->get_attn(), inp->get_recr(),
+                    inpL, inp_pos, sections, ced_npref, ced_tail_eff,
+                    h_pref, ced_proj_table(&model));
+            ced_win = 0;
+            GGML_UNUSED(win);
+            GGML_UNUSED(win_pos);
+
+            ggml_tensor * pre = ggml_view_2d(ctx0, inpL,
+                    inpL->ne[0], ced_npref, inpL->nb[1], 0);
+            inpL = ced_npref > 0 ? ggml_concat(ctx0, pre, dec, 1) : dec;
+            cb(inpL, "ced_recombined", il);
+            break;      // the decoder half is done in one shot
+        }
+
         ggml_tensor * inpSA = inpL;
 
         cur = build_norm(inpL, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, il);
@@ -263,16 +657,50 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         // Save the tensor before post-attention norm for residual connection
         ggml_tensor * ffn_residual = cur;
 
-        // Post-attention norm
-        ggml_tensor * attn_post_norm = build_norm(cur, model.layers[il].attn_post_norm, nullptr, LLM_NORM_RMS, il);
-        cb(attn_post_norm, "attn_post_norm", il);
+        // ---- encoder structural pruning: drop the FFN sub-block -----------
+        // The token mixer has already run and its residual is in place, so
+        // skipping the FFN is exactly "residual passes through this half of
+        // the layer".  build_cvec still runs, keeping the tail of the loop
+        // identical to the unpruned path.
+        const bool drop_ffn = il < ced_split && enc_noffn_requested(il, -1);
 
-        // Dense FFN layer - without residual connection
-        cur = build_layer_ffn(attn_post_norm, il);
-        cb(cur, "ffn_out", il);
+        // ---- prefix-FFN skip: "CED for the encoder" -----------------------
+        // The token mixer still runs on every token -- that is what keeps the
+        // recurrent state chain intact -- but the FFN sub-block only runs on
+        // the trailing `ced_tail_eff` tokens.  Prefix tokens therefore reach
+        // the split point through a shallower FFN path; the CED projection is
+        // retrained to read whatever that path produces.  Same recombine
+        // pattern as the decoder split above.
+        const bool pffn = !drop_ffn && ced && ced_npref > 0 &&
+                          il < ced_split && enc_pffn_requested(il, -1);
 
-        // Residual connection for FFN - add to the tensor from before post_attention_layernorm
-        cur = ggml_add(ctx0, cur, ffn_residual);
+        if (drop_ffn) {
+            cb(cur, "enc_noffn_skip", il);
+        } else if (pffn) {
+            ggml_tensor * pre_w = ggml_view_2d(ctx0, cur, cur->ne[0], ced_npref,
+                                               cur->nb[1], 0);
+            ggml_tensor * win_w = ggml_view_2d(ctx0, cur, cur->ne[0], ced_tail_eff,
+                                               cur->nb[1], (size_t) ced_npref * cur->nb[1]);
+            ggml_tensor * win_norm = build_norm(win_w, model.layers[il].attn_post_norm,
+                                                nullptr, LLM_NORM_RMS, il);
+            cb(win_norm, "enc_pffn_norm", il);
+            ggml_tensor * win_ffn = build_layer_ffn(win_norm, il);
+            cb(win_ffn, "enc_pffn_ffn", il);
+            ggml_tensor * win_out = ggml_add(ctx0, win_ffn, win_w);
+            cur = ggml_concat(ctx0, pre_w, win_out, 1);
+            cb(cur, "enc_pffn_out", il);
+        } else {
+            // Post-attention norm
+            ggml_tensor * attn_post_norm = build_norm(cur, model.layers[il].attn_post_norm, nullptr, LLM_NORM_RMS, il);
+            cb(attn_post_norm, "attn_post_norm", il);
+
+            // Dense FFN layer - without residual connection
+            cur = build_layer_ffn(attn_post_norm, il);
+            cb(cur, "ffn_out", il);
+
+            // Residual connection for FFN - add to the tensor from before post_attention_layernorm
+            cur = ggml_add(ctx0, cur, ffn_residual);
+        }
         cb(cur, "post_ffn", il);
 
         cur = build_cvec(cur, il);
@@ -308,11 +736,12 @@ std::pair<ggml_tensor *, ggml_tensor *> llama_model_qwen35::graph::build_qkvz(
                 ggml_tensor * input,
                         int   il) {
     const int64_t n_seqs       = ubatch.n_seqs;
-    const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+    const int64_t n_seq_tokens = ced_win > 0 ? ced_win : (int64_t) ubatch.n_seq_tokens;
 
     ggml_tensor * qkv_mixed = build_lora_mm(model.layers[il].wqkv, input, model.layers[il].wqkv_s);
-    qkv_mixed = ggml_reshape_3d(ctx0, qkv_mixed, qkv_mixed->ne[0], n_seq_tokens, n_seqs);
     cb(qkv_mixed, "linear_attn_qkv_mixed", il);
+
+    qkv_mixed = ggml_reshape_3d(ctx0, qkv_mixed, qkv_mixed->ne[0], n_seq_tokens, n_seqs);
 
     ggml_tensor * z = build_lora_mm(model.layers[il].wqkv_gate, input, model.layers[il].wqkv_gate_s);
     cb(z, "z", il);
@@ -367,6 +796,13 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
     Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, nullptr, LLM_NORM_RMS, il);
     cb(Kcur, "Kcur_normed", il);
 
+    // CED dump probe: stash the true post-k_norm K of the decoder full-attention
+    // layers so the prefix projection can be fitted against BOARD targets.
+    if (std::getenv("LLAMA_QWEN35_CED_DUMP_KV") != nullptr) {
+        if (il == 19) { res->t_layer_inp[17] = Kcur; }
+        if (il == 23) { res->t_layer_inp[19] = Kcur; }
+    }
+
     ggml_tensor * gate = ggml_view_3d(ctx0, Qcur_full, n_embd_head, n_head, n_tokens_local,
         ggml_element_size(Qcur_full) * n_embd_head * 2,
         ggml_element_size(Qcur_full) * n_embd_head * 2 * n_head,
@@ -375,6 +811,12 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
     cb(gate, "gate_reshaped", il);
 
     Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens_local);
+
+    // CED dump probe: stash the true v_proj output (the CED path stores vp as-is).
+    if (std::getenv("LLAMA_QWEN35_CED_DUMP_KV") != nullptr) {
+        if (il == 19) { res->t_layer_inp[18] = Vcur; }
+        if (il == 23) { res->t_layer_inp[21] = Vcur; }
+    }
 
     // Apply MRoPE
     Qcur = ggml_rope_multi(
@@ -390,8 +832,10 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn(
             );
 
     cb(Qcur, "Qcur", il);
-    cb(Kcur, "Kcur", il);
-    cb(Vcur, "Vcur", il);
+    // distinct from the "Kcur" matmul above: the profiler keys by name, so reusing it would merge
+    // the RoPE cost into the K projection
+    cb(Kcur, "Kcur_rope", il);
+    cb(Vcur, "Vcur_rope", il);
 
     // Attention computation
     const float kq_scale = hparams.f_attention_scale == 0.0f ? 1.0f / sqrtf(float(n_embd_head)) : hparams.f_attention_scale;
@@ -459,11 +903,11 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
     const int64_t num_k_heads  = hparams.ssm_n_group;
     const int64_t num_v_heads  = hparams.ssm_dt_rank;
     const int64_t head_v_dim   = d_inner / num_v_heads;
-    const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+    const int64_t n_seq_tokens = ced_win > 0 ? ced_win : (int64_t) ubatch.n_seq_tokens;
 
     GGML_ASSERT(n_seqs != 0);
     GGML_ASSERT(ubatch.equal_seqs());
-    GGML_ASSERT(ubatch.n_tokens == n_seq_tokens * n_seqs);
+    GGML_ASSERT(ced_win > 0 || ubatch.n_tokens == n_seq_tokens * n_seqs);
 
     // Input projections
     auto qkvz = build_qkvz(cur, il);
@@ -471,15 +915,15 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
     ggml_tensor * z         = qkvz.second;
 
     ggml_tensor * beta = build_lora_mm(model.layers[il].ssm_beta, cur, model.layers[il].ssm_beta_s);
-    beta = ggml_reshape_4d(ctx0, beta, 1, num_v_heads, n_seq_tokens, n_seqs);
     cb(beta, "beta", il);
+    beta = ggml_reshape_4d(ctx0, beta, 1, num_v_heads, n_seq_tokens, n_seqs);
 
     beta = ggml_sigmoid(ctx0, beta);
     cb(beta, "beta_sigmoid", il);
 
     ggml_tensor * alpha = build_lora_mm(model.layers[il].ssm_alpha, cur, model.layers[il].ssm_alpha_s);
-    alpha = ggml_reshape_3d(ctx0, alpha, num_v_heads, n_seq_tokens, n_seqs);
     cb(alpha, "alpha", il);
+    alpha = ggml_reshape_3d(ctx0, alpha, num_v_heads, n_seq_tokens, n_seqs);
 
     ggml_tensor * alpha_biased   = ggml_add(ctx0, alpha, model.layers[il].ssm_dt);
     ggml_tensor * alpha_softplus = ggml_softplus(ctx0, alpha_biased);
@@ -497,16 +941,14 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
     const int64_t conv_kernel_size = conv_kernel->ne[0];
     const int64_t conv_channels    = d_inner + 2 * hparams.ssm_n_group * hparams.ssm_d_state;
 
-    auto [qkv_transposed, conv_states, conv_dst_state] = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
+    auto [qkv_transposed, conv_states, conv_dst_state] = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, hparams.ssm_d_state, il);
 
     ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
     state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
     cb(state, "state_predelta", il);
 
-    ggml_tensor * conv_output_proper = ggml_ssm_conv_state(ctx0, conv_states, qkv_transposed, conv_kernel, conv_dst_state);
-    cb(conv_output_proper, "conv_output_raw", il);
-
-    ggml_tensor * conv_output_silu = ggml_silu(ctx0, conv_output_proper);
+    // the conv kernel applies silu in its epilogue, so no separate ggml_silu node is needed
+    ggml_tensor * conv_output_silu = ggml_ssm_conv_state(ctx0, conv_states, qkv_transposed, conv_kernel, conv_dst_state, true);
     cb(conv_output_silu, "conv_output_silu", il);
 
     ggml_tensor * conv_qkv_mix = conv_output_silu;
